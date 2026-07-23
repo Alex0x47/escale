@@ -482,6 +482,57 @@ func openAIFieldTranslationResponse() throws {
     #expect(decoded == "Nouveau cette semaine.")
 }
 
+@Test("Full-listing AI instructions enforce ASO and selected-store limits")
+func openAIListingASOInstructions() {
+    let limits = OpenAITranslationLimits.storeListing(platforms: [.appStore, .playStore])
+    let instructions = OpenAIClient.listingTranslationInstructions(limits: limits)
+
+    #expect(instructions.contains("Apple App Store and Google Play"))
+    #expect(instructions.contains("Target-locale ASO"))
+    #expect(instructions.contains("natural search vocabulary"))
+    #expect(instructions.contains("never keyword-stuff"))
+    #expect(instructions.contains("title 30"))
+    #expect(instructions.contains("subtitle 30"))
+    #expect(instructions.contains("keywords 100"))
+    #expect(instructions.contains("do not rely on downstream truncation"))
+}
+
+@Test("Field AI instructions apply field-specific ASO guidance and hard limits")
+func openAIFieldASOInstructions() {
+    let instructions = OpenAIClient.fieldTranslationInstructions(
+        field: .keywords,
+        characterLimit: 100,
+        platforms: [.appStore]
+    )
+
+    #expect(instructions.contains("distinct, high-intent localized search terms"))
+    #expect(instructions.contains("commas with no spaces"))
+    #expect(instructions.contains("hard maximum of 100 characters"))
+    #expect(instructions.contains("Do not return text cut off mid-word"))
+}
+
+@Test("AI output is capped locally even if a model exceeds store limits")
+func openAIOutputLimits() {
+    let limits = OpenAITranslationLimits.storeListing(platforms: [.appStore])
+    var translation = OpenAITranslation(
+        title: String(repeating: "a", count: 50),
+        subtitle: String(repeating: "b", count: 50),
+        promotionalText: String(repeating: "c", count: 200),
+        description: String(repeating: "d", count: 4_100),
+        keywords: String(repeating: "e", count: 120),
+        releaseNotes: String(repeating: "f", count: 4_100)
+    )
+    translation.apply(limits: limits)
+
+    #expect(translation.title.count == 30)
+    #expect(translation.subtitle.count == 30)
+    #expect(translation.promotionalText.count == 170)
+    #expect(translation.description.count == 4_000)
+    #expect(translation.keywords.count == 100)
+    #expect(translation.releaseNotes.count == 4_000)
+    #expect(OpenAIClient.enforcingCharacterLimit("Une mise à jour", limit: 8).count == 8)
+}
+
 @Test("Optional live App Store Connect read smoke test")
 func liveAppleRead() async throws {
     let environment = ProcessInfo.processInfo.environment

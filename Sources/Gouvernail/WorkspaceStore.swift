@@ -370,7 +370,8 @@ final class WorkspaceStore: ObservableObject {
                         sourceLocale: sourceLocale,
                         targetLocale: locale,
                         targetLanguage: target.language,
-                        characterLimit: googlePlayReleaseNoteCharacterLimit
+                        characterLimit: googlePlayReleaseNoteCharacterLimit,
+                        platforms: [.playStore]
                     )
                     setGooglePlayReleaseNote(translation, locale: locale)
                     completed += 1
@@ -453,7 +454,7 @@ final class WorkspaceStore: ObservableObject {
             guard let apiKey = try CredentialStore.openAIAPIKey() else { throw OpenAIClientError.missingAPIKey }
             let targetPlatforms = platformFilter.platforms.intersection(availablePlatforms(for: appID))
             let source = listingLocalization(storedSource, displaying: targetPlatforms)
-            let limits = OpenAITranslationLimits.storeListing(includesAppStore: targetPlatforms.contains(.appStore))
+            let limits = OpenAITranslationLimits.storeListing(platforms: targetPlatforms)
             showToast(
                 "Translating \(source.language) to \(target.language)…",
                 detail: "Sending the listing directly to OpenAI and preserving store limits.",
@@ -546,7 +547,8 @@ final class WorkspaceStore: ObservableObject {
                         sourceLocale: source.locale,
                         targetLocale: target.locale,
                         targetLanguage: target.language,
-                        characterLimit: characterLimit
+                        characterLimit: characterLimit,
+                        platforms: targetPlatforms
                     )
                     guard let targetIndex = workspace.localizationsByApp[appID]?.firstIndex(where: { $0.id == target.id }) else {
                         failures.append(target.language)

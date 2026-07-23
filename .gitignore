@@ -1,0 +1,22 @@
+# macOS and editor files
+.DS_Store
+*.xcuserstate
+xcuserdata/
+
+# Swift build products
+.build/
+.swiftpm/
+dist/
+
+# Local environment and logs
+.env
+.env.*
+*.log
+
+# Credentials and private keys
+*.p8
+AuthKey_*.p8
+service-account*.json
+google-service-account*.json
+credentials.json
+

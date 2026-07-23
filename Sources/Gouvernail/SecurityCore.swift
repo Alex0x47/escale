@@ -1,0 +1,344 @@
+import CryptoKit
+import Foundation
+import Security
+
+struct AppleCredentials: Codable, Sendable {
+    let issuerID: String
+    let keyID: String
+    let privateKeyPEM: String
+}
+
+struct GoogleServiceAccount: Codable, Sendable {
+    let type: String?
+    let projectID: String?
+    let privateKeyID: String
+    let privateKey: String
+    let clientEmail: String
+    let tokenURI: String
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case projectID = "project_id"
+        case privateKeyID = "private_key_id"
+        case privateKey = "private_key"
+        case clientEmail = "client_email"
+        case tokenURI = "token_uri"
+    }
+}
+
+@MainActor
+enum CredentialStore {
+    private static let service = "app.gouvernail.mac.credentials"
+    private static let appleAccount = "app-store-connect"
+    private static let googleAccount = "google-play-service-account"
+    private static let openAIAccount = "openai-api-key"
+
+    // Keychain remains the persistent source of truth. These values avoid
+    // asking macOS to authorize the same item again for every API operation in
+    // one app session, and are discarded automatically when the app exits.
+    private static var cachedApple: AppleCredentials?
+    private static var hasLoadedApple = false
+    private static var cachedGoogle: GoogleServiceAccount?
+    private static var hasLoadedGoogle = false
+    private static var cachedOpenAIAPIKey: String?
+    private static var hasLoadedOpenAIAPIKey = false
+
+    static func saveApple(_ credentials: AppleCredentials) throws {
+        try KeychainStore.save(try JSONEncoder().encode(credentials), service: service, account: appleAccount)
+        cachedApple = credentials
+        hasLoadedApple = true
+    }
+
+    static func apple() throws -> AppleCredentials? {
+        if hasLoadedApple { return cachedApple }
+        guard let data = try KeychainStore.read(service: service, account: appleAccount) else {
+            hasLoadedApple = true
+            return nil
+        }
+        let credentials = try JSONDecoder().decode(AppleCredentials.self, from: data)
+        cachedApple = credentials
+        hasLoadedApple = true
+        return credentials
+    }
+
+    static func saveGoogle(_ credentials: GoogleServiceAccount) throws {
+        try KeychainStore.save(try JSONEncoder().encode(credentials), service: service, account: googleAccount)
+        cachedGoogle = credentials
+        hasLoadedGoogle = true
+    }
+
+    static func google() throws -> GoogleServiceAccount? {
+        if hasLoadedGoogle { return cachedGoogle }
+        guard let data = try KeychainStore.read(service: service, account: googleAccount) else {
+            hasLoadedGoogle = true
+            return nil
+        }
+        let credentials = try JSONDecoder().decode(GoogleServiceAccount.self, from: data)
+        cachedGoogle = credentials
+        hasLoadedGoogle = true
+        return credentials
+    }
+
+    static func saveOpenAIAPIKey(_ apiKey: String) throws {
+        let clean = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard clean.count >= 20 else {
+            throw APIError.invalidCredentials("Enter a complete OpenAI API key.")
+        }
+        try KeychainStore.save(
+            Data(clean.utf8),
+            service: service,
+            account: openAIAccount,
+            accessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        )
+        cachedOpenAIAPIKey = clean
+        hasLoadedOpenAIAPIKey = true
+    }
+
+    static func openAIAPIKey() throws -> String? {
+        if hasLoadedOpenAIAPIKey { return cachedOpenAIAPIKey }
+        guard let data = try KeychainStore.read(service: service, account: openAIAccount) else {
+            hasLoadedOpenAIAPIKey = true
+            return nil
+        }
+        guard let value = String(data: data, encoding: .utf8), !value.isEmpty else { return nil }
+        cachedOpenAIAPIKey = value
+        hasLoadedOpenAIAPIKey = true
+        return value
+    }
+
+    static func removeOpenAIAPIKey() throws {
+        try KeychainStore.delete(service: service, account: openAIAccount)
+        cachedOpenAIAPIKey = nil
+        hasLoadedOpenAIAPIKey = true
+    }
+
+    static func remove(_ platform: StorePlatform) throws {
+        try KeychainStore.delete(service: service, account: platform == .appStore ? appleAccount : googleAccount)
+        if platform == .appStore {
+            cachedApple = nil
+            hasLoadedApple = true
+        } else {
+            cachedGoogle = nil
+            hasLoadedGoogle = true
+        }
+    }
+}
+
+enum KeychainStore {
+    static func save(
+        _ data: Data,
+        service: String,
+        account: String,
+        accessible: CFString = kSecAttrAccessibleAfterFirstUnlock
+    ) throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        let attributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: accessible
+        ]
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            var add = query
+            attributes.forEach { add[$0.key] = $0.value }
+            let addStatus = SecItemAdd(add as CFDictionary, nil)
+            guard addStatus == errSecSuccess else { throw APIError.keychain(addStatus) }
+        } else if status != errSecSuccess {
+            throw APIError.keychain(status)
+        }
+    }
+
+    static func read(service: String, account: String) throws -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = item as? Data else { throw APIError.keychain(status) }
+        return data
+    }
+
+    static func delete(service: String, account: String) throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw APIError.keychain(status) }
+    }
+}
+
+enum APIError: LocalizedError, Sendable {
+    case missingCredentials(StorePlatform)
+    case invalidCredentials(String)
+    case invalidResponse
+    case http(status: Int, message: String)
+    case keychain(OSStatus)
+    case signing(String)
+    case unsupported(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingCredentials(let platform): "Connect \(platform.rawValue) before continuing."
+        case .invalidCredentials(let message): "Invalid credentials: \(message)"
+        case .invalidResponse: "The store returned an unreadable response."
+        case .http(let status, let message): "Store request failed (HTTP \(status)): \(message)"
+        case .keychain(let status): "Keychain operation failed (\(status))."
+        case .signing(let message): "Could not sign the authorization token: \(message)"
+        case .unsupported(let message): message
+        }
+    }
+}
+
+enum JWTSigner {
+    static func appleToken(credentials: AppleCredentials, now: Date = Date()) throws -> String {
+        let header: [String: Any] = ["alg": "ES256", "kid": credentials.keyID, "typ": "JWT"]
+        let issuedAt = Int(now.timeIntervalSince1970)
+        let claims: [String: Any] = [
+            "iss": credentials.issuerID,
+            "iat": issuedAt,
+            "exp": issuedAt + 20 * 60,
+            "aud": "appstoreconnect-v1"
+        ]
+        let signingInput = try jwtInput(header: header, claims: claims)
+        do {
+            let key = try P256.Signing.PrivateKey(pemRepresentation: credentials.privateKeyPEM)
+            let signature = try key.signature(for: Data(signingInput.utf8))
+            return signingInput + "." + signature.rawRepresentation.base64URLEncodedString()
+        } catch {
+            throw APIError.signing(error.localizedDescription)
+        }
+    }
+
+    static func googleAssertion(credentials: GoogleServiceAccount, now: Date = Date()) throws -> String {
+        let header: [String: Any] = ["alg": "RS256", "typ": "JWT", "kid": credentials.privateKeyID]
+        let issuedAt = Int(now.timeIntervalSince1970)
+        let claims: [String: Any] = [
+            "iss": credentials.clientEmail,
+            "scope": "https://www.googleapis.com/auth/androidpublisher",
+            "aud": credentials.tokenURI,
+            "iat": issuedAt,
+            "exp": issuedAt + 3_600
+        ]
+        let signingInput = try jwtInput(header: header, claims: claims)
+        let key = try rsaPrivateKey(from: credentials.privateKey)
+        var signingError: Unmanaged<CFError>?
+        guard let signature = SecKeyCreateSignature(
+            key,
+            .rsaSignatureMessagePKCS1v15SHA256,
+            Data(signingInput.utf8) as CFData,
+            &signingError
+        ) as Data? else {
+            throw APIError.signing(signingError?.takeRetainedValue().localizedDescription ?? "RSA signing failed")
+        }
+        return signingInput + "." + signature.base64URLEncodedString()
+    }
+
+    private static func jwtInput(header: [String: Any], claims: [String: Any]) throws -> String {
+        let options: JSONSerialization.WritingOptions = [.sortedKeys, .withoutEscapingSlashes]
+        let headerData = try JSONSerialization.data(withJSONObject: header, options: options)
+        let claimsData = try JSONSerialization.data(withJSONObject: claims, options: options)
+        return headerData.base64URLEncodedString() + "." + claimsData.base64URLEncodedString()
+    }
+
+    private static func rsaPrivateKey(from pem: String) throws -> SecKey {
+        let pemData = Data(pem.utf8)
+        var format = SecExternalFormat.formatUnknown
+        var itemType = SecExternalItemType.itemTypeUnknown
+        var items: CFArray?
+        let importStatus = SecItemImport(pemData as CFData, nil, &format, &itemType, [], nil, nil, &items)
+        if importStatus == errSecSuccess, let imported = items as? [SecKey], let key = imported.first {
+            return key
+        }
+
+        let stripped = pem
+            .replacingOccurrences(of: "-----BEGIN PRIVATE KEY-----", with: "")
+            .replacingOccurrences(of: "-----END PRIVATE KEY-----", with: "")
+            .components(separatedBy: .whitespacesAndNewlines)
+            .joined()
+        guard let der = Data(base64Encoded: stripped) else {
+            throw APIError.invalidCredentials("The Google private key is not valid PEM.")
+        }
+        let attributes: [String: Any] = [
+            kSecAttrKeyType as String: kSecAttrKeyTypeRSA,
+            kSecAttrKeyClass as String: kSecAttrKeyClassPrivate
+        ]
+        var error: Unmanaged<CFError>?
+        guard let key = SecKeyCreateWithData(der as CFData, attributes as CFDictionary, &error) else {
+            throw APIError.signing(error?.takeRetainedValue().localizedDescription ?? "Unable to import the RSA key")
+        }
+        return key
+    }
+}
+
+extension Data {
+    func base64URLEncodedString() -> String {
+        base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+}
+
+struct HTTPResponse: Sendable {
+    let data: Data
+    let response: HTTPURLResponse
+}
+
+enum HTTPTransport {
+    static func send(
+        url: URL,
+        method: String = "GET",
+        headers: [String: String] = [:],
+        body: Data? = nil,
+        timeout: TimeInterval = 60
+    ) async throws -> HTTPResponse {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.httpBody = body
+        request.timeoutInterval = timeout
+        request.setValue("Gouvernail/0.2 macOS", forHTTPHeaderField: "User-Agent")
+        headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        guard 200..<300 ~= http.statusCode else {
+            throw APIError.http(status: http.statusCode, message: errorMessage(from: data))
+        }
+        return HTTPResponse(data: data, response: http)
+    }
+
+    static func jsonBody(_ object: Any) throws -> Data {
+        try JSONSerialization.data(withJSONObject: object, options: [.withoutEscapingSlashes])
+    }
+
+    private static func errorMessage(from data: Data) -> String {
+        guard !data.isEmpty else { return "No error details were returned." }
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let errors = object["errors"] as? [[String: Any]], let first = errors.first {
+                return (first["detail"] as? String) ?? (first["title"] as? String) ?? "Unknown App Store Connect error"
+            }
+            if let error = object["error"] as? [String: Any] {
+                return (error["message"] as? String) ?? (error["status"] as? String) ?? "Unknown Google Play error"
+            }
+            if let description = object["error_description"] as? String { return description }
+        }
+        return String(data: data, encoding: .utf8) ?? "Unknown store error"
+    }
+}
+
+extension URL {
+    func appendingQueryItems(_ items: [URLQueryItem]) -> URL {
+        guard var components = URLComponents(url: self, resolvingAgainstBaseURL: false) else { return self }
+        components.queryItems = (components.queryItems ?? []) + items
+        return components.url ?? self
+    }
+}

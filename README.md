@@ -98,7 +98,7 @@ Gouvernail has no third-party Swift package dependencies.
 On GitHub, click **Code**, copy the HTTPS repository URL, then run:
 
 ```bash
-git clone <copied-github-https-url>
+git clone git@github.com:Alex0x47/gouvernail.git
 cd gouvernail
 ```
 

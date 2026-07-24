@@ -110,7 +110,11 @@ enum SampleData {
             ("ZA", "South Africa", "🇿🇦", "ZAR", 0.45)
         ]
         let regions: [PriceRegion] = regionData.map { code, country, flag, currency, index in
-            PriceRegion(code: code, country: country, flag: flag, currency: currency, pppIndex: index, currentPrice: 59.99, suggestedPrice: roundedCharmPrice(59.99 * index), enabled: code != "US")
+            PriceRegion(
+                code: code, country: country, flag: flag, currency: currency,
+                pppIndex: index, currentPrice: 59.99, suggestedPrice: roundedCharmPrice(59.99 * index),
+                enabled: pricingRegionEnabledByDefault(code)
+            )
         }
         return [
             StoreProduct(id: UUID(), name: "Northstar Plus — Annual", productID: "plus.annual", kind: "Auto-renewable subscription", basePrice: 59.99, platforms: [.appStore, .playStore], regions: regions, appleProductID: nil, googleProductID: "plus.annual", googleBasePlanID: "annual"),

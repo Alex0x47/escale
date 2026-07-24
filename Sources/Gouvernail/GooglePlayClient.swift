@@ -244,9 +244,14 @@ struct GooglePlayClient: Sendable {
                 pppIndex: factor,
                 currentPrice: existing[code]?.currentPrice ?? convertedPrice,
                 suggestedPrice: localizedCharmPrice(convertedPrice * factor, currency: currency),
-                enabled: code != "US"
+                enabled: pricingRegionEnabledByDefault(code)
             ))
         }
+        regions = googlePriceRegionsIncludingUSBase(
+            regions,
+            proposedBasePrice: product.basePrice,
+            currentBasePrice: existing["US"]?.currentPrice ?? product.basePrice
+        )
         guard !regions.isEmpty else { throw APIError.unsupported("Google Play did not return any available pricing regions.") }
         return GooglePriceCalculation(regions: regions.sorted { $0.country < $1.country }, regionsVersion: response.version)
     }
@@ -517,8 +522,8 @@ struct GooglePlayClient: Sendable {
     private func convertedPPPTargets(product: StoreProduct, packageName: String) async throws -> GoogleConvertedTargets {
         let response = try await convertRegionPrices(basePrice: product.basePrice, packageName: packageName)
         var targets: [String: GoogleConvertedPrice] = [:]
-        for region in regionsRequiringPriceChange(product.regions) {
-            guard response.converted[region.code] != nil else { continue }
+        let availableCodes = Set(response.converted.keys)
+        for region in googleRegionsRequiringPriceChange(product.regions, convertedRegionCodes: availableCodes) {
             targets[region.code] = GoogleConvertedPrice(value: region.suggestedPrice, currency: region.currency)
         }
         guard !targets.isEmpty else { throw APIError.unsupported("Google Play did not return converted prices for the selected regions.") }
@@ -725,6 +730,41 @@ func googleLegacyCatalogRequiresMigration(_ error: Error) -> Bool {
     return message.localizedCaseInsensitiveContains("migrate to the new publishing API")
 }
 
+func googlePriceRegionsIncludingUSBase(
+    _ regions: [PriceRegion],
+    proposedBasePrice: Double,
+    currentBasePrice: Double
+) -> [PriceRegion] {
+    var result = regions
+    if let index = result.firstIndex(where: { $0.code == "US" }) {
+        result[index].currentPrice = currentBasePrice
+        result[index].suggestedPrice = proposedBasePrice
+        result[index].pppIndex = 1
+        result[index].enabled = pricingRegionEnabledByDefault("US")
+    } else {
+        result.append(PriceRegion(
+            code: "US",
+            country: countryName(for: "US"),
+            flag: flag(for: "US"),
+            currency: "USD",
+            pppIndex: 1,
+            currentPrice: currentBasePrice,
+            suggestedPrice: proposedBasePrice,
+            enabled: pricingRegionEnabledByDefault("US")
+        ))
+    }
+    return result
+}
+
+func googleRegionsRequiringPriceChange(
+    _ regions: [PriceRegion],
+    convertedRegionCodes: Set<String>
+) -> [PriceRegion] {
+    regionsRequiringPriceChange(regions).filter {
+        $0.code == "US" || convertedRegionCodes.contains($0.code)
+    }
+}
+
 private func moneyObject(value: Double, currency: String) -> [String: Any] {
     let units = Int64(value.rounded(.down))
     let nanos = Int(((value - Double(units)) * 1_000_000_000).rounded())
@@ -734,7 +774,8 @@ private func moneyObject(value: Double, currency: String) -> [String: Any] {
 private func priceRegion(code: String, price: Double, currency: String) -> PriceRegion {
     PriceRegion(
         code: code, country: countryName(for: code), flag: flag(for: code), currency: currency,
-        pppIndex: 1, currentPrice: price, suggestedPrice: price, enabled: code != "US"
+        pppIndex: 1, currentPrice: price, suggestedPrice: price,
+        enabled: pricingRegionEnabledByDefault(code)
     )
 }
 

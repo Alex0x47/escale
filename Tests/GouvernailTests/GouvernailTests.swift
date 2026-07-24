@@ -409,6 +409,88 @@ func pricingApplyFiltersNoOpMarkets() {
     #expect(PricingApplyProgress(platform: .appStore, completed: 2, total: 4, detail: "").fraction == 0.5)
 }
 
+@Test("App Store pricing includes the US base market and proposed price")
+func appStorePricingIncludesUSBaseMarket() throws {
+    let existingUS = PriceRegion(
+        code: "US", country: "United States", flag: "🇺🇸", currency: "USD",
+        pppIndex: 1, currentPrice: 1.99, suggestedPrice: 1.99, enabled: false
+    )
+    let regions = appleCalculatedPriceRegions(
+        resolvedBasePrice: 2.99,
+        currentBasePrice: 1.99,
+        equalizations: [
+            (territory: "AFG", price: 2.49, currency: "USD"),
+            (territory: "ALB", price: 2.99, currency: "USD")
+        ],
+        existing: ["US": existingUS],
+        factors: ["AF": 0.8, "AL": 0.9]
+    )
+
+    let unitedStates = try #require(regions.first(where: { $0.code == "US" }))
+    #expect(unitedStates.country == "United States")
+    #expect(unitedStates.currentPrice == 1.99)
+    #expect(unitedStates.suggestedPrice == 2.99)
+    #expect(unitedStates.pppIndex == 1)
+    #expect(unitedStates.enabled)
+    #expect(regions.filter { $0.code == "US" }.count == 1)
+}
+
+@Test("App Store subscription scheduling maps the US base market")
+func appStoreSubscriptionTerritoryMapIncludesUS() {
+    let map = appleTerritoryIdentifiers(
+        equalizations: [(territory: "AFG", price: 2.49, currency: "USD")],
+        includesUSBase: true
+    )
+    #expect(map["US"] == "USA")
+    #expect(map["AF"] == "AFG")
+}
+
+@Test("US base pricing is enabled by default for both stores")
+func usBasePricingEnabledByDefault() throws {
+    #expect(pricingRegionEnabledByDefault("US"))
+    let fallbackUS = try #require(defaultPriceRegions(basePrice: 1.99).first(where: { $0.code == "US" }))
+    #expect(fallbackUS.enabled)
+
+    let currentUS = PriceRegion(
+        code: "US", country: "United States", flag: "🇺🇸", currency: "USD",
+        pppIndex: 1, currentPrice: 1.99, suggestedPrice: 1.99, enabled: false
+    )
+    let googleRegions = googlePriceRegionsIncludingUSBase(
+        [currentUS],
+        proposedBasePrice: 2.99,
+        currentBasePrice: 1.99
+    )
+    let googleUS = try #require(googleRegions.first(where: { $0.code == "US" }))
+    #expect(googleUS.currentPrice == 1.99)
+    #expect(googleUS.suggestedPrice == 2.99)
+    #expect(googleUS.enabled)
+}
+
+@Test("Google applies a changed US base even when conversion data omits it")
+func googleBasePriceChangeDoesNotDependOnConversionRow() {
+    let unitedStates = PriceRegion(
+        code: "US", country: "United States", flag: "🇺🇸", currency: "USD",
+        pppIndex: 1, currentPrice: 1.99, suggestedPrice: 2.99, enabled: true
+    )
+    #expect(
+        googleRegionsRequiringPriceChange([unitedStates], convertedRegionCodes: []).map(\.code)
+            == ["US"]
+    )
+}
+
+@Test("Base-price drafts accept decimal separators and reject invalid prices")
+func basePriceDraftParsing() {
+    #expect(storePriceValue(from: "2.99") == 2.99)
+    #expect(storePriceValue(from: "2,99") == 2.99)
+    #expect(storePriceValue(from: " 2.99 ") == 2.99)
+    #expect(storePriceValue(from: "2.") == 2)
+    #expect(storePriceValue(from: "") == nil)
+    #expect(storePriceValue(from: "0") == nil)
+    #expect(storePriceValue(from: "-2.99") == nil)
+    #expect(storePriceValue(from: "2.9x") == nil)
+    #expect(storePriceValue(from: "1,2.3") == nil)
+}
+
 @Test("Optional live pricing-index sources smoke test")
 func livePricingIndexes() async throws {
     guard ProcessInfo.processInfo.environment["GOUVERNAIL_LIVE_PRICING_INDEX"] == "1" else { return }

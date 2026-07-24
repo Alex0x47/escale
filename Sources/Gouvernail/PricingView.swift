@@ -7,6 +7,10 @@ struct PricingView: View {
     @State private var isApplying = false
     @State private var showingMigrationConfirmation = false
     @State private var showingAppleDecreaseConfirmation = false
+    @State private var basePriceDraft = ""
+    @State private var basePriceDraftProductID: UUID?
+    @State private var basePriceValidationMessage: String?
+    @FocusState private var isBasePriceFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -71,6 +75,7 @@ struct PricingView: View {
                 .padding(24)
             }
             pricingInspector(product: product)
+                .id(productID)
                 .frame(minWidth: 290, idealWidth: 330, maxWidth: 370)
         }
     }
@@ -99,7 +104,17 @@ struct PricingView: View {
     }
 
     private func regionTable(product: Binding<StoreProduct>) -> some View {
-        let indices = product.wrappedValue.regions.indices.filter { index in search.isEmpty || product.wrappedValue.regions[index].country.localizedCaseInsensitiveContains(search) }
+        let indices = product.wrappedValue.regions.indices
+            .filter { index in
+                search.isEmpty || product.wrappedValue.regions[index].country.localizedCaseInsensitiveContains(search)
+            }
+            .sorted { lhs, rhs in
+                let left = product.wrappedValue.regions[lhs]
+                let right = product.wrappedValue.regions[rhs]
+                if left.code == "US" { return right.code != "US" }
+                if right.code == "US" { return false }
+                return left.country < right.country
+            }
         return VStack(spacing: 0) {
             HStack {
                 Text("MARKET").frame(maxWidth: .infinity, alignment: .leading)
@@ -117,7 +132,18 @@ struct PricingView: View {
                     HStack(spacing: 10) {
                         Text(region.wrappedValue.flag).font(.title3)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(region.wrappedValue.country).font(.subheadline.weight(.medium))
+                            HStack(spacing: 6) {
+                                Text(region.wrappedValue.country).font(.subheadline.weight(.medium))
+                                if region.wrappedValue.code == "US" {
+                                    Text("BASE")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .tracking(0.4)
+                                        .foregroundStyle(Theme.accent)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 2)
+                                        .background(Theme.accent.opacity(0.1), in: Capsule())
+                                }
+                            }
                             Text(region.wrappedValue.currency).font(.caption2).foregroundStyle(.secondary)
                         }
                     }
@@ -151,13 +177,34 @@ struct PricingView: View {
                     .font(.subheadline).padding(11).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 9))
             }
             VStack(alignment: .leading, spacing: 8) {
-                HStack { Text("Base price").font(.caption.weight(.semibold)); Spacer(); Text("USD").font(.caption).foregroundStyle(.secondary) }
-                TextField("Base price", value: product.basePrice, format: .number.precision(.fractionLength(2)))
+                HStack { Text("Proposed base price").font(.caption.weight(.semibold)); Spacer(); Text("USD").font(.caption).foregroundStyle(.secondary) }
+                TextField("Base price", text: $basePriceDraft)
                     .textFieldStyle(.roundedBorder)
-                    .onSubmit { Task { await store.calculatePPP(productID: product.wrappedValue.id) } }
-                    .onChange(of: product.wrappedValue.basePrice) { oldValue, newValue in
-                        if oldValue != newValue { product.wrappedValue.pricingCalculatedAt = nil }
+                    .focused($isBasePriceFocused)
+                    .onSubmit {
+                        guard commitBasePriceDraft(to: product) else { return }
+                        isBasePriceFocused = false
+                        Task { await store.calculatePPP(productID: product.wrappedValue.id) }
                     }
+                    .onChange(of: basePriceDraft) { _, _ in
+                        basePriceValidationMessage = nil
+                    }
+                if let basePriceValidationMessage {
+                    Label(basePriceValidationMessage, systemImage: "exclamationmark.circle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let unitedStates = product.wrappedValue.regions.first(where: { $0.code == "US" }) {
+                    HStack {
+                        Text("Current US price")
+                        Spacer()
+                        Text("$\(unitedStates.currentPrice, specifier: "%.2f")")
+                            .monospacedDigit()
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                }
             }
             VStack(alignment: .leading, spacing: 8) {
                 Text("Pricing index").font(.caption.weight(.semibold))
@@ -232,6 +279,8 @@ struct PricingView: View {
             }
             Spacer()
             Button {
+                guard commitBasePriceDraft(to: product) else { return }
+                isBasePriceFocused = false
                 Task { await store.calculatePPP(productID: product.wrappedValue.id) }
             } label: {
                 if store.calculatingProductIDs.contains(product.wrappedValue.id) {
@@ -240,6 +289,8 @@ struct PricingView: View {
             }
             .buttonStyle(.bordered).disabled(store.calculatingProductIDs.contains(product.wrappedValue.id))
             Button {
+                guard product.wrappedValue.pricingCalculatedAt != nil,
+                      basePriceDraftMatches(product.wrappedValue) else { return }
                 selectedProductID = product.wrappedValue.id
                 if product.wrappedValue.isSubscription && product.wrappedValue.effectiveSubscriberPricePolicy == .migrate {
                     showingMigrationConfirmation = true
@@ -265,10 +316,70 @@ struct PricingView: View {
                     Label(applyButtonTitle(product.wrappedValue), systemImage: "arrow.up.circle.fill").frame(maxWidth: .infinity)
                 }
             }
-            .buttonStyle(.borderedProminent).controlSize(.large).disabled(isApplying || product.wrappedValue.pricingCalculatedAt == nil)
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(
+                isApplying
+                    || product.wrappedValue.pricingCalculatedAt == nil
+                    || !basePriceDraftMatches(product.wrappedValue)
+            )
         }
         .padding(22)
         .background(Theme.sidebar.opacity(0.6))
+        .onAppear {
+            synchronizeBasePriceDraft(with: product.wrappedValue, force: true)
+        }
+        .onChange(of: isBasePriceFocused) { _, isFocused in
+            if !isFocused, basePriceDraftProductID == product.wrappedValue.id {
+                _ = commitBasePriceDraft(to: product)
+            }
+        }
+        .onChange(of: product.wrappedValue.basePrice) { _, newValue in
+            if !isBasePriceFocused, basePriceDraftProductID == product.wrappedValue.id {
+                basePriceDraft = formattedBasePrice(newValue)
+            }
+        }
+    }
+
+    private func synchronizeBasePriceDraft(with product: StoreProduct, force: Bool = false) {
+        guard force || basePriceDraftProductID != product.id || !isBasePriceFocused else { return }
+        basePriceDraftProductID = product.id
+        basePriceDraft = formattedBasePrice(product.basePrice)
+        basePriceValidationMessage = nil
+    }
+
+    @discardableResult
+    private func commitBasePriceDraft(to product: Binding<StoreProduct>) -> Bool {
+        guard basePriceDraftProductID == product.wrappedValue.id,
+              let value = storePriceValue(from: basePriceDraft) else {
+            basePriceValidationMessage = "Enter a valid price greater than zero."
+            return false
+        }
+
+        var updatedProduct = product.wrappedValue
+        if abs(updatedProduct.basePrice - value) > 0.000_001 {
+            updatedProduct.basePrice = value
+            updatedProduct.pricingCalculatedAt = nil
+            product.wrappedValue = updatedProduct
+        }
+        basePriceDraft = formattedBasePrice(value)
+        basePriceValidationMessage = nil
+        return true
+    }
+
+    private func formattedBasePrice(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        formatter.usesGroupingSeparator = false
+        return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
+    }
+
+    private func basePriceDraftMatches(_ product: StoreProduct) -> Bool {
+        guard basePriceDraftProductID == product.id,
+              let value = storePriceValue(from: basePriceDraft) else { return false }
+        return abs(value - product.basePrice) <= 0.000_001
     }
 
     private func applyButtonTitle(_ product: StoreProduct) -> String {

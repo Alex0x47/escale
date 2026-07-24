@@ -854,10 +854,11 @@ final class WorkspaceStore: ObservableObject {
                 }
                 if product.platforms.contains(.appStore), product.appleProductID != nil {
                     guard let credentials = try CredentialStore.apple() else { throw APIError.missingCredentials(.appStore) }
-                    let appleRegions = try await AppStoreConnectClient(credentials: credentials)
-                        .calculateRegionalPrices(product: product, factors: indexResult.factors).regions
+                    let appleCalculation = try await AppStoreConnectClient(credentials: credentials)
+                        .calculateRegionalPrices(product: product, factors: indexResult.factors)
+                    product.basePrice = appleCalculation.resolvedBasePrice
                     let existingCodes = Set(calculated.map(\.code))
-                    calculated.append(contentsOf: appleRegions.filter { !existingCodes.contains($0.code) })
+                    calculated.append(contentsOf: appleCalculation.regions.filter { !existingCodes.contains($0.code) })
                 }
                 guard !calculated.isEmpty else { throw APIError.unsupported("No store returned regional pricing data for this product.") }
                 product.regions = calculated.sorted { $0.country < $1.country }

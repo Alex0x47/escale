@@ -409,6 +409,32 @@ func regionsRequiringPriceChange(_ regions: [PriceRegion]) -> [PriceRegion] {
     }
 }
 
+func pricingRegionEnabledByDefault(_ code: String) -> Bool {
+    true
+}
+
+func storePriceValue(from input: String) -> Double? {
+    let compact = String(
+        input
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .filter { !$0.isWhitespace }
+    )
+    guard !compact.isEmpty,
+          !(compact.contains(",") && compact.contains(".")) else {
+        return nil
+    }
+
+    let normalized = compact.replacingOccurrences(of: ",", with: ".")
+    guard normalized.filter({ $0 == "." }).count <= 1,
+          normalized.allSatisfy({ $0.isNumber || $0 == "." }),
+          let value = Double(normalized),
+          value.isFinite,
+          value > 0 else {
+        return nil
+    }
+    return value
+}
+
 func canonicalStoreLocale(_ locale: String) -> String {
     let normalized = locale.replacingOccurrences(of: "_", with: "-").lowercased()
     let components = normalized.split(separator: "-")

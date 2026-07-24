@@ -37,6 +37,7 @@ struct AppStoreVersionDraft: Sendable {
 }
 
 struct ApplePriceCalculation: Sendable {
+    let resolvedBasePrice: Double
     let regions: [PriceRegion]
 }
 
@@ -491,26 +492,33 @@ struct AppStoreConnectClient: Sendable {
 
     func calculateRegionalPrices(product: StoreProduct, factors: [String: Double]) async throws -> ApplePriceCalculation {
         guard let productID = product.appleProductID else { throw APIError.unsupported("This product is not linked to App Store Connect.") }
+        let existing = Dictionary(uniqueKeysWithValues: product.regions.map { ($0.code, $0) })
         let equalizations: [(territory: String, price: Double, currency: String)]
+        let base: (id: String, price: Double)
+        let currentBasePrice: Double
         if product.isSubscription {
-            let base = try await closestSubscriptionPricePoint(subscriptionID: productID, territory: "USA", desiredPrice: product.basePrice)
+            base = try await closestSubscriptionPricePoint(subscriptionID: productID, territory: "USA", desiredPrice: product.basePrice)
+            let liveBase = try? await currentSubscriptionPriceRegions(subscriptionID: productID)
+                .first(where: { $0.code == "US" })?
+                .currentPrice
+            currentBasePrice = liveBase ?? existing["US"]?.currentPrice ?? product.basePrice
             equalizations = try await equalizedPrices(path: "/v1/subscriptionPricePoints/\(base.id)/equalizations")
         } else {
-            let base = try await closestIAPPricePoint(productID: productID, territory: "USA", desiredPrice: product.basePrice)
+            base = try await closestIAPPricePoint(productID: productID, territory: "USA", desiredPrice: product.basePrice)
+            currentBasePrice = (try? await currentIAPBasePrice(productID: productID))
+                ?? existing["US"]?.currentPrice
+                ?? product.basePrice
             equalizations = try await equalizedPrices(path: "/v1/inAppPurchasePricePoints/\(base.id)/equalizations")
         }
-        let existing = Dictionary(uniqueKeysWithValues: product.regions.map { ($0.code, $0) })
-        let regions = equalizations.compactMap { item -> PriceRegion? in
-            guard let code = iso2(fromISO3: item.territory) else { return nil }
-            let factor = factors[code] ?? 1
-            return PriceRegion(
-                code: code, country: countryName(for: code), flag: flag(for: code), currency: item.currency,
-                pppIndex: factor, currentPrice: existing[code]?.currentPrice ?? item.price,
-                suggestedPrice: localizedCharmPrice(item.price * factor, currency: item.currency), enabled: code != "US"
-            )
-        }.sorted { $0.country < $1.country }
+        let regions = appleCalculatedPriceRegions(
+            resolvedBasePrice: base.price,
+            currentBasePrice: currentBasePrice,
+            equalizations: equalizations,
+            existing: existing,
+            factors: factors
+        )
         guard !regions.isEmpty else { throw APIError.unsupported("App Store Connect did not return equalized price points.") }
-        return ApplePriceCalculation(regions: regions)
+        return ApplePriceCalculation(resolvedBasePrice: base.price, regions: regions)
     }
 
     private static let editableStates: Set<String> = ["PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED", "INVALID_BINARY"]
@@ -767,7 +775,8 @@ struct AppStoreConnectClient: Sendable {
                 ?? "USD"
             regions.append(PriceRegion(
                 code: code, country: countryName(for: code), flag: flag(for: code), currency: currency,
-                pppIndex: 1, currentPrice: price, suggestedPrice: price, enabled: code != "US"
+                pppIndex: 1, currentPrice: price, suggestedPrice: price,
+                enabled: pricingRegionEnabledByDefault(code)
             ))
         }
         guard !regions.isEmpty else { throw APIError.unsupported("App Store Connect returned no effective subscription prices.") }
@@ -779,13 +788,15 @@ struct AppStoreConnectClient: Sendable {
         inAppPurchaseID: String,
         progress: PricingApplyProgressHandler?
     ) async throws {
-        let changedRegions = regionsRequiringPriceChange(product.regions)
+        let changedRegions = regionsRequiringPriceChange(product.regions).filter { $0.code != "US" }
         let total = changedRegions.count + 2
         await progress?(PricingApplyProgress(
             platform: .appStore, completed: 0, total: total,
             detail: "Resolving the App Store base price point…"
         ))
-        let basePoint = try await closestIAPPricePoint(productID: inAppPurchaseID, territory: "USA", desiredPrice: product.basePrice)
+        let usRegion = product.regions.first(where: { $0.code == "US" })
+        let desiredBasePrice = usRegion.map { $0.enabled ? $0.suggestedPrice : $0.currentPrice } ?? product.basePrice
+        let basePoint = try await closestIAPPricePoint(productID: inAppPurchaseID, territory: "USA", desiredPrice: desiredBasePrice)
         await progress?(PricingApplyProgress(
             platform: .appStore, completed: 1, total: total,
             detail: "Loading available App Store territories…"
@@ -847,7 +858,7 @@ struct AppStoreConnectClient: Sendable {
     ) async throws {
         let basePoint = try await closestSubscriptionPricePoint(subscriptionID: subscriptionID, territory: "USA", desiredPrice: product.basePrice)
         let territories = try await equalizedPrices(path: "/v1/subscriptionPricePoints/\(basePoint.id)/equalizations")
-        let territoryByISO2 = Dictionary(uniqueKeysWithValues: territories.compactMap { item in iso2(fromISO3: item.territory).map { ($0, item.territory) } })
+        let territoryByISO2 = appleTerritoryIdentifiers(equalizations: territories, includesUSBase: true)
         let startDate = appleSubscriptionPriceChangeStartDate()
         let changedRegions = regionsRequiringPriceChange(product.regions)
             .filter { territoryByISO2[$0.code] != nil }
@@ -1092,6 +1103,53 @@ private func parseApplePriceDate(_ value: String?) -> Date? {
     return formatter.date(from: value)
 }
 
+func appleCalculatedPriceRegions(
+    resolvedBasePrice: Double,
+    currentBasePrice: Double,
+    equalizations: [(territory: String, price: Double, currency: String)],
+    existing: [String: PriceRegion],
+    factors: [String: Double]
+) -> [PriceRegion] {
+    var regions = equalizations.compactMap { item -> PriceRegion? in
+        guard let code = iso2(fromISO3: item.territory), code != "US" else { return nil }
+        let factor = factors[code] ?? 1
+        return PriceRegion(
+            code: code,
+            country: countryName(for: code),
+            flag: flag(for: code),
+            currency: item.currency,
+            pppIndex: factor,
+            currentPrice: existing[code]?.currentPrice ?? item.price,
+            suggestedPrice: localizedCharmPrice(item.price * factor, currency: item.currency),
+            enabled: pricingRegionEnabledByDefault(code)
+        )
+    }
+    regions.append(PriceRegion(
+        code: "US",
+        country: countryName(for: "US"),
+        flag: flag(for: "US"),
+        currency: "USD",
+        pppIndex: 1,
+        currentPrice: currentBasePrice,
+        suggestedPrice: resolvedBasePrice,
+        enabled: pricingRegionEnabledByDefault("US")
+    ))
+    return regions.sorted { $0.country < $1.country }
+}
+
+func appleTerritoryIdentifiers(
+    equalizations: [(territory: String, price: Double, currency: String)],
+    includesUSBase: Bool
+) -> [String: String] {
+    var result = Dictionary(uniqueKeysWithValues: equalizations.compactMap { item in
+        iso2(fromISO3: item.territory).map { ($0, item.territory) }
+    })
+    if includesUSBase {
+        result["US"] = "USA"
+    }
+    return result
+}
+
 func defaultPriceRegions(basePrice: Double) -> [PriceRegion] {
     let data: [(String, String, String, String, Double)] = [
         ("US", "United States", "🇺🇸", "USD", 1), ("GB", "United Kingdom", "🇬🇧", "GBP", 0.86),
@@ -1100,7 +1158,11 @@ func defaultPriceRegions(basePrice: Double) -> [PriceRegion] {
         ("MX", "Mexico", "🇲🇽", "MXN", 0.48), ("ZA", "South Africa", "🇿🇦", "ZAR", 0.45)
     ]
     return data.map { code, country, flag, currency, index in
-        PriceRegion(code: code, country: country, flag: flag, currency: currency, pppIndex: index, currentPrice: basePrice, suggestedPrice: roundedCharmPrice(basePrice * index), enabled: code != "US")
+        PriceRegion(
+            code: code, country: country, flag: flag, currency: currency,
+            pppIndex: index, currentPrice: basePrice, suggestedPrice: roundedCharmPrice(basePrice * index),
+            enabled: pricingRegionEnabledByDefault(code)
+        )
     }
 }
 

@@ -1,4 +1,6 @@
 import AppKit
+import EscaleCore
+import EscaleUI
 import SwiftUI
 
 @MainActor
@@ -29,13 +31,15 @@ final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct GouvernailApp: App {
+struct EscaleCommunityApp: App {
     @NSApplicationDelegateAdaptor(AppLifecycleDelegate.self) private var appDelegate
-    @StateObject private var store = WorkspaceStore()
+    @StateObject private var store = WorkspaceStore(
+        entitlements: CommunityEntitlements()
+    )
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            EscaleRootView()
                 .environmentObject(store)
                 .frame(minWidth: 1120, minHeight: 720)
         }

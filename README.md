@@ -1,7 +1,7 @@
-# Gouvernail
+# Escale
 
 <p align="center">
-  <img src="Assets/AppIcon.png" width="128" alt="Gouvernail app icon">
+  <img src="Assets/AppIcon.png" width="128" alt="Escale app icon">
 </p>
 
 <p align="center">
@@ -11,21 +11,21 @@
 <p align="center">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138">
-  <img alt="GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-blue">
+  <img alt="Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue">
 </p>
 
 > [!CAUTION]
-> **Gouvernail is experimental software under active development. Use it entirely at your own risk.**
+> **Escale is experimental software under active development. Use it entirely at your own risk.**
 >
-> Gouvernail connects to live production accounts and can remotely modify store listings, screenshots, in-app product and subscription pricing, subscriber price behavior, localizations, and public review replies. A defect, API change, incorrect permission, misunderstood option, or user error may cause financial loss, rejected releases, unintended review submissions, incorrect prices, lost metadata, or other production impact.
+> Escale connects to live production accounts and can remotely modify store listings, screenshots, in-app product and subscription pricing, subscriber price behavior, localizations, and public review replies. A defect, API change, incorrect permission, misunderstood option, or user error may cause financial loss, rejected releases, unintended review submissions, incorrect prices, lost metadata, or other production impact.
 >
 > Always verify proposed changes in App Store Connect and Google Play Console, keep independent copies of important metadata, use least-privilege credentials, and test with non-critical apps and products first. You are solely responsible for every credential supplied and every remote operation performed with this software.
 >
-> Gouvernail is provided **without warranty of any kind**. To the maximum extent permitted by applicable law, its authors and contributors are not liable for damages or losses arising from its use. See the [GPL-3.0 licence](LICENSE), particularly its warranty and liability provisions.
+> Escale is provided **without warranty of any kind**. To the maximum extent permitted by applicable law, its authors and contributors are not liable for damages or losses arising from its use. See the [Apache-2.0 licence](LICENSE), particularly its warranty and liability provisions.
 
 ## Project status
 
-Gouvernail started as an experiment in building a useful native developer tool with AI-assisted development. It is now open source so that its behavior can be inspected, tested, improved, and adapted by the community.
+Escale started as an experiment in building a useful native developer tool with AI-assisted development. It is now open source so that its behavior can be inspected, tested, improved, and adapted by the community.
 
 It is not a finished or audited production product:
 
@@ -36,7 +36,7 @@ It is not a finished or audited production product:
 
 Review the code paths relevant to your workflow before granting access to valuable production accounts.
 
-## What Gouvernail does
+## What Escale does
 
 - Connects directly to App Store Connect using an Issuer ID, Key ID, and `.p8` Team API key.
 - Connects directly to Google Play using a Google Cloud service-account JSON document.
@@ -61,7 +61,7 @@ Understand these behaviors before connecting a production account:
 
 - **Save to stores** writes listing metadata remotely.
 - Creating an iOS version creates an editable metadata version but does not submit it for App Review.
-- Gouvernail first asks Google Play to keep listing edits out of review. Accounts configured for automatic review may reject that option and require Google to send the edit for review automatically. Gouvernail reports when this happens.
+- Escale first asks Google Play to keep listing edits out of review. Accounts configured for automatic review may reject that option and require Google to send the edit for review automatically. Escale reports when this happens.
 - Screenshot deletion removes the remote screenshot before removing it from the local gallery.
 - **Apply new pricing** changes production product or subscription pricing in the selected territories.
 - Apple may automatically pass subscription price decreases to existing subscribers even when price preservation is selected.
@@ -89,7 +89,7 @@ There is no automatic rollback. Keep a record of the previous state before apply
 - An App Store Connect account and/or Google Play Console account
 - An OpenAI API key only if AI-assisted translation is required
 
-Gouvernail has no third-party Swift package dependencies.
+Escale has no third-party Swift package dependencies.
 
 ## Clone and run locally
 
@@ -98,8 +98,8 @@ Gouvernail has no third-party Swift package dependencies.
 On GitHub, click **Code**, copy the HTTPS repository URL, then run:
 
 ```bash
-git clone git@github.com:Alex0x47/gouvernail.git
-cd gouvernail
+git clone git@github.com:Alex0x47/escale.git
+cd escale
 ```
 
 ### 2. Install the local build requirement
@@ -127,13 +127,13 @@ From the repository root:
 This builds a debug `.app`, creates its macOS icon, signs it with the first available Apple Development identity, and opens:
 
 ```text
-dist/Gouvernail.app
+dist/Escale.app
 ```
 
 To choose a particular signing identity:
 
 ```bash
-GOUVERNAIL_CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" \
+ESCALE_CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" \
 ./scripts/run-app.sh
 ```
 
@@ -144,7 +144,7 @@ If no Apple Development identity is installed, the build script uses an ad-hoc s
 For quick UI work that does not need persistent store credentials:
 
 ```bash
-swift run Gouvernail
+swift run Escale
 ```
 
 `swift run` launches a raw SwiftPM executable with a changing ad-hoc code identity. Do not use it for normal connected-account workflows: macOS may repeatedly ask whether the rebuilt executable can read credentials from Keychain. Prefer `./scripts/run-app.sh`.
@@ -155,7 +155,7 @@ swift run Gouvernail
 open Package.swift
 ```
 
-Select the **Gouvernail** scheme and run it as a macOS application.
+Select the **Escale** scheme and run it as a macOS application.
 
 ## Build a standalone app bundle
 
@@ -163,7 +163,7 @@ Create an optimized local bundle:
 
 ```bash
 ./scripts/build-app.sh
-open dist/Gouvernail.app
+open dist/Escale.app
 ```
 
 The script builds the executable, creates `AppIcon.icns`, assembles the bundle, and signs it with an available Apple Development identity. It falls back to an ad-hoc signature when necessary.
@@ -181,12 +181,12 @@ The default suite tests domain behavior, response decoding, persistence rules, p
 Optional live smoke tests run only when their environment variables are supplied:
 
 ```bash
-GOUVERNAIL_APPLE_ISSUER_ID="..." \
-GOUVERNAIL_APPLE_KEY_ID="..." \
-GOUVERNAIL_APPLE_P8_PATH="/absolute/path/AuthKey_ABC123.p8" \
-GOUVERNAIL_GOOGLE_SERVICE_ACCOUNT_PATH="/absolute/path/service-account.json" \
-GOUVERNAIL_GOOGLE_PACKAGE="com.company.product" \
-GOUVERNAIL_OPENAI_API_KEY="sk-..." \
+ESCALE_APPLE_ISSUER_ID="..." \
+ESCALE_APPLE_KEY_ID="..." \
+ESCALE_APPLE_P8_PATH="/absolute/path/AuthKey_ABC123.p8" \
+ESCALE_GOOGLE_SERVICE_ACCOUNT_PATH="/absolute/path/service-account.json" \
+ESCALE_GOOGLE_PACKAGE="com.company.product" \
+ESCALE_OPENAI_API_KEY="sk-..." \
 swift test
 ```
 
@@ -201,11 +201,11 @@ Never commit credential files or paste private keys into tests, issues, screensh
 3. Under **Team Keys**, generate an API key with the access required for the intended workflows. App Manager access is the normal starting point; use broader access only when genuinely required.
 4. Copy the **Issuer ID** and **Key ID**.
 5. Download the `.p8` private key. Apple allows it to be downloaded only once.
-6. In Gouvernail, enter both identifiers, choose the matching `.p8` file, and connect.
+6. In Escale, enter both identifiers, choose the matching `.p8` file, and connect.
 
 Official instructions: [Get started with the App Store Connect API](https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api).
 
-Gouvernail signs short-lived ES256 JWTs locally. Apple credentials are stored in macOS Keychain, not in the repository or workspace cache.
+Escale signs short-lived ES256 JWTs locally. Apple credentials are stored in macOS Keychain, not in the repository or workspace cache.
 
 ## Configure Google Play
 
@@ -216,19 +216,19 @@ Gouvernail signs short-lived ES256 JWTs locally. Apple credentials are stored in
 5. In Play Console, open **Users and permissions** and invite the service-account email.
 6. Grant access only to the required apps.
 7. Grant the feature permissions required for the intended workflows, such as app information, store presence, releases, review replies, and product/subscription management.
-8. Choose the JSON file in Gouvernail and connect.
+8. Choose the JSON file in Escale and connect.
 9. Add each exact Android package name. The publishing API cannot enumerate every app in an account.
 
 Official instructions: [Google Play Developer API getting started](https://developers.google.com/android-publisher/getting_started).
 
-Gouvernail signs an RS256 service-account assertion locally and exchanges it for an in-memory OAuth token. The service-account document is stored in macOS Keychain.
+Escale signs an RS256 service-account assertion locally and exchanges it for an in-memory OAuth token. The service-account document is stored in macOS Keychain.
 
 ## Configure AI translation
 
 AI features are optional and use an API key belonging to the user:
 
 1. Create an API key in the [OpenAI dashboard](https://platform.openai.com/api-keys).
-2. Open Gouvernail Settings.
+2. Open Escale Settings.
 3. Save the key in the **OpenAI** section.
 4. Optionally run **Test connection**.
 
@@ -249,7 +249,7 @@ AI output can be incorrect, misleading, culturally inappropriate, or too long de
 
 Disconnecting a store removes its saved credential from Keychain. Cached app data remains locally until the workspace is replaced or cleared.
 
-Gouvernail is local-first, but it necessarily sends requests to Apple, Google, public pricing-data sources, and—only when an AI action is requested—OpenAI.
+Escale is local-first, but it necessarily sends requests to Apple, Google, public pricing-data sources, and—only when an AI action is requested—OpenAI.
 
 ## PPP pricing data
 
@@ -277,20 +277,28 @@ These are heuristic inputs, not financial advice. Dataset coverage, exchange rat
 ## Project structure
 
 ```text
-Sources/Gouvernail/
-├── AppStoreConnectClient.swift   # Apple authentication and API operations
-├── GooglePlayClient.swift        # Google OAuth and Android Publisher operations
-├── OpenAIClient.swift            # Direct AI translation requests
-├── PricingIndexService.swift     # External pricing-index inputs
-├── SecurityCore.swift            # Keychain, JWT signing, and HTTP transport
-├── WorkspaceStore.swift          # Cross-store orchestration and persistence
-├── Models.swift                  # Shared domain model
-└── *View.swift                   # Native SwiftUI interface
+Sources/
+├── EscaleCore/                   # Public domain, API, security, and state library
+├── EscaleUI/                     # Public reusable SwiftUI screens and app shell
+└── EscaleCommunityApp/           # Thin community-edition executable and resources
 
-Tests/GouvernailTests/            # Domain, decoding, crypto, and smoke tests
-scripts/run-app.sh                # Recommended local development launch
-scripts/build-app.sh              # Standalone app-bundle assembly
+Tests/EscaleCoreTests/             # Domain, decoding, crypto, and smoke tests
+scripts/run-app.sh                 # Recommended local development launch
+scripts/build-app.sh               # Standalone app-bundle assembly
 ```
+
+## Community and commercial editions
+
+The package deliberately separates reusable product code from the executable:
+
+- `EscaleCore` owns the models, store clients, credentials, persistence, and orchestration.
+- `EscaleUI` depends on `EscaleCore` and owns the reusable community screens.
+- `EscaleCommunityApp` depends on both libraries and contains only the macOS entry point and application resources.
+
+A private commercial repository should depend on the public package's `EscaleCore` and `EscaleUI` products, then add `EscaleProKit` and its own thin `EscaleProApp` executable. It should not copy shared files. A bug affecting both editions is fixed and tested here once; the commercial repository then updates its pinned package revision. Commercial-only code never enters this repository, so updating the shared dependency cannot publish it accidentally.
+
+See [Maintaining community and commercial editions](Documentation/EDITIONS.md) for the dependency and release workflow.
+See [Escale editions and feature boundaries](Documentation/FEATURES.md) for the Community and Pro capability matrix.
 
 ## Contributing
 
@@ -311,16 +319,16 @@ Suggested workflow:
 5. Run `swift test`.
 6. Open a pull request describing the remote behavior affected and how it was verified.
 
-For feature ideas and general feedback, use the [Gouvernail feedback board](https://litefeedback.com/roadmap/Gouvernail). Security issues involving a possible credential leak should not be posted with real secrets or tokens. Revoke any exposed credential immediately.
+For feature ideas and general feedback, use the [Escale feedback board](https://litefeedback.com/roadmap/Escale). Security issues involving a possible credential leak should not be posted with real secrets or tokens. Revoke any exposed credential immediately.
 
 ## Licence
 
-Gouvernail is free software licensed under the [GNU General Public License version 3](LICENSE), using the SPDX identifier `GPL-3.0-only`.
+Escale is open-source software licensed under the [Apache License 2.0](LICENSE), using the SPDX identifier `Apache-2.0`.
 
-You may use, inspect, modify, and redistribute it under that licence. If you distribute a modified version, the GPL's source-disclosure and copyleft conditions apply. The software is provided without warranty, and the licence contains limitations of liability.
+You may use, inspect, modify, and redistribute it—including as part of a proprietary product—subject to the licence terms. Redistributions must retain the required licence and attribution notices, and modified files must carry prominent change notices. The licence includes an express patent grant but does not grant rights to the Escale name or trademarks. The software is provided without warranty, and the licence contains limitations of liability.
 
-Copyright © 2026 Alexandre Grisey and Gouvernail contributors.
+Copyright © 2026 Alexandre Grisey and Escale contributors.
 
 ## Non-affiliation
 
-Gouvernail is an independent open-source project. It is not affiliated with, endorsed by, or sponsored by Apple, Google, OpenAI, Netflix, The Economist, or the World Bank. Product names and trademarks belong to their respective owners.
+Escale is an independent open-source project. It is not affiliated with, endorsed by, or sponsored by Apple, Google, OpenAI, Netflix, The Economist, or the World Bank. Product names and trademarks belong to their respective owners.

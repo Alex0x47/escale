@@ -1,18 +1,22 @@
+import EscaleCore
 import SwiftUI
 
-struct PricingView: View {
+public struct PricingView: View {
+    public init() {}
+
     @EnvironmentObject private var store: WorkspaceStore
     @State private var selectedProductID: UUID?
     @State private var search = ""
     @State private var isApplying = false
     @State private var showingMigrationConfirmation = false
     @State private var showingAppleDecreaseConfirmation = false
+    @State private var proFeature: EscaleFeature?
     @State private var basePriceDraft = ""
     @State private var basePriceDraftProductID: UUID?
     @State private var basePriceValidationMessage: String?
     @FocusState private var isBasePriceFocused: Bool
 
-    var body: some View {
+    public var body: some View {
         VStack(spacing: 0) {
             header
             Divider()
@@ -33,7 +37,7 @@ struct PricingView: View {
             Button("Apply and migrate subscribers", role: .destructive) { applySelectedProduct() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("The stores may notify subscribers, and price increases can require consent. This cannot be silently undone by Gouvernail.")
+            Text("The stores may notify subscribers, and price increases can require consent. This cannot be silently undone by Escale.")
         }
         .confirmationDialog(
             "Apple will lower prices for existing subscribers",
@@ -44,6 +48,9 @@ struct PricingView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(appleDecreaseConfirmationMessage)
+        }
+        .sheet(item: $proFeature) { feature in
+            ProFeatureSheet(feature: feature)
         }
     }
 
@@ -289,6 +296,10 @@ struct PricingView: View {
             }
             .buttonStyle(.bordered).disabled(store.calculatingProductIDs.contains(product.wrappedValue.id))
             Button {
+                guard store.hasAccess(to: .applyRegionalPricing) else {
+                    proFeature = .applyRegionalPricing
+                    return
+                }
                 guard product.wrappedValue.pricingCalculatedAt != nil,
                       basePriceDraftMatches(product.wrappedValue) else { return }
                 selectedProductID = product.wrappedValue.id
@@ -313,7 +324,15 @@ struct PricingView: View {
                     }
                     .frame(maxWidth: .infinity)
                 } else {
-                    Label(applyButtonTitle(product.wrappedValue), systemImage: "arrow.up.circle.fill").frame(maxWidth: .infinity)
+                    Label(
+                        store.hasAccess(to: .applyRegionalPricing)
+                            ? applyButtonTitle(product.wrappedValue)
+                            : "\(applyButtonTitle(product.wrappedValue)) · Pro",
+                        systemImage: store.hasAccess(to: .applyRegionalPricing)
+                            ? "arrow.up.circle.fill"
+                            : "lock.fill"
+                    )
+                    .frame(maxWidth: .infinity)
                 }
             }
             .buttonStyle(.borderedProminent)
@@ -424,6 +443,10 @@ struct PricingView: View {
     }
 
     private func applySelectedProduct() {
+        guard store.hasAccess(to: .applyRegionalPricing) else {
+            proFeature = .applyRegionalPricing
+            return
+        }
         guard let productID = selectedProductID ?? store.selectedProducts.first?.id else { return }
         isApplying = true
         Task {

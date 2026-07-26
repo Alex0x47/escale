@@ -4,7 +4,7 @@ private actor GoogleTokenCache {
     static let shared = GoogleTokenCache()
     private var tokens: [String: (value: String, expiry: Date)] = [:]
 
-    func token(for credentials: GoogleServiceAccount) async throws -> String {
+    public func token(for credentials: GoogleServiceAccount) async throws -> String {
         if let cached = tokens[credentials.clientEmail], cached.expiry > Date().addingTimeInterval(60) { return cached.value }
         let assertion = try JWTSigner.googleAssertion(credentials: credentials)
         var components = URLComponents()
@@ -38,7 +38,7 @@ private struct GoogleConvertedTargets: Sendable {
     let regionsVersion: String
 }
 
-enum GoogleEditCommitDisposition: Sendable, Equatable {
+public enum GoogleEditCommitDisposition: Sendable, Equatable {
     case heldForManualReview
     case sentForReviewAutomatically
 }
@@ -48,9 +48,9 @@ private struct GoogleConvertedPrice: Sendable {
     let currency: String
 }
 
-struct GooglePriceCalculation: Sendable {
-    let regions: [PriceRegion]
-    let regionsVersion: String
+public struct GooglePriceCalculation: Sendable {
+    public let regions: [PriceRegion]
+    public let regionsVersion: String
 }
 
 private struct GoogleProductsFetchResult: Sendable {
@@ -59,20 +59,20 @@ private struct GoogleProductsFetchResult: Sendable {
     let allSourcesFailed: Bool
 }
 
-struct GooglePlayClient: Sendable {
+public struct GooglePlayClient: Sendable {
     private let credentials: GoogleServiceAccount
     private let baseURL = URL(string: "https://androidpublisher.googleapis.com/androidpublisher/v3")!
     private let uploadBaseURL = URL(string: "https://androidpublisher.googleapis.com/upload/androidpublisher/v3")!
 
-    init(credentials: GoogleServiceAccount) {
+    public init(credentials: GoogleServiceAccount) {
         self.credentials = credentials
     }
 
-    func validateCredentials() async throws {
+    public func validateCredentials() async throws {
         _ = try await GoogleTokenCache.shared.token(for: credentials)
     }
 
-    func fetchSnapshot(packageName: String, progress: StoreFetchProgressHandler? = nil) async throws -> StoreSnapshot {
+    public func fetchSnapshot(packageName: String, progress: StoreFetchProgressHandler? = nil) async throws -> StoreSnapshot {
         await progress?(StoreFetchProgress(completed: 0, total: 4, detail: "Opening a temporary Google Play edit…"))
         let editID = try await createEdit(packageName: packageName)
         do {
@@ -116,7 +116,7 @@ struct GooglePlayClient: Sendable {
         }
     }
 
-    func saveLocalization(_ localization: ListingLocalization, packageName: String) async throws -> GoogleEditCommitDisposition {
+    public func saveLocalization(_ localization: ListingLocalization, packageName: String) async throws -> GoogleEditCommitDisposition {
         let editID = try await createEdit(packageName: packageName)
         do {
             let language = localization.googleLanguage ?? localization.locale
@@ -138,7 +138,7 @@ struct GooglePlayClient: Sendable {
         }
     }
 
-    func reply(to review: CustomerReview, packageName: String, text: String) async throws {
+    public func reply(to review: CustomerReview, packageName: String, text: String) async throws {
         guard let reviewID = review.remoteID else { throw APIError.invalidResponse }
         _ = try await request(
             path: "/applications/\(encoded(packageName))/reviews/\(encoded(reviewID)):reply",
@@ -147,7 +147,7 @@ struct GooglePlayClient: Sendable {
         )
     }
 
-    func uploadScreenshot(
+    public func uploadScreenshot(
         data: Data,
         fileName: String,
         mimeType: String,
@@ -157,7 +157,7 @@ struct GooglePlayClient: Sendable {
     ) async throws {
         let editID = try await createEdit(packageName: packageName)
         do {
-            let boundary = "gouvernail-\(UUID().uuidString)"
+            let boundary = "escale-\(UUID().uuidString)"
             var body = Data()
             body.appendUTF8("--\(boundary)\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{}\r\n")
             body.appendUTF8("--\(boundary)\r\nContent-Type: \(mimeType)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n\r\n")
@@ -177,7 +177,7 @@ struct GooglePlayClient: Sendable {
         }
     }
 
-    func deleteScreenshot(remoteID: String, packageName: String, language: String, imageType: String = "phoneScreenshots") async throws {
+    public func deleteScreenshot(remoteID: String, packageName: String, language: String, imageType: String = "phoneScreenshots") async throws {
         let editID = try await createEdit(packageName: packageName)
         do {
             _ = try await request(path: "/applications/\(encoded(packageName))/edits/\(encoded(editID))/listings/\(encoded(language))/\(encoded(imageType))/\(encoded(remoteID))", method: "DELETE")
@@ -188,7 +188,7 @@ struct GooglePlayClient: Sendable {
         }
     }
 
-    func applyRegionalPrices(
+    public func applyRegionalPrices(
         product: StoreProduct,
         packageName: String,
         progress: PricingApplyProgressHandler? = nil
@@ -225,7 +225,7 @@ struct GooglePlayClient: Sendable {
         ))
     }
 
-    func calculateRegionalPrices(product: StoreProduct, factors: [String: Double], packageName: String) async throws -> GooglePriceCalculation {
+    public func calculateRegionalPrices(product: StoreProduct, factors: [String: Double], packageName: String) async throws -> GooglePriceCalculation {
         let response = try await convertRegionPrices(basePrice: product.basePrice, packageName: packageName)
         let existing = Dictionary(uniqueKeysWithValues: product.regions.map { ($0.code, $0) })
         var regions: [PriceRegion] = []
@@ -674,18 +674,18 @@ struct GooglePlayClient: Sendable {
     }
 }
 
-func googleDraftCommitQueryItems() -> [URLQueryItem] {
+public func googleDraftCommitQueryItems() -> [URLQueryItem] {
     [
         URLQueryItem(name: "changesNotSentForReview", value: "true"),
         URLQueryItem(name: "changesInReviewBehavior", value: "ERROR_IF_IN_REVIEW")
     ]
 }
 
-func googleAutomaticReviewCommitQueryItems() -> [URLQueryItem] {
+public func googleAutomaticReviewCommitQueryItems() -> [URLQueryItem] {
     [URLQueryItem(name: "changesInReviewBehavior", value: "ERROR_IF_IN_REVIEW")]
 }
 
-func googleRequiresAutomaticReviewSubmission(_ error: Error) -> Bool {
+public func googleRequiresAutomaticReviewSubmission(_ error: Error) -> Bool {
     guard case let APIError.http(status, message) = error, status == 400 else { return false }
     let normalized = message.lowercased()
     return normalized.contains("changes are sent for review automatically")
@@ -713,24 +713,24 @@ private func moneyValue(_ object: [String: Any]) -> Double {
     return units + Double(nanos) / 1_000_000_000
 }
 
-func googleLegacyPriceValue(_ object: [String: Any]) -> Double {
+public func googleLegacyPriceValue(_ object: [String: Any]) -> Double {
     let micros = object.string("priceMicros").flatMap(Double.init) ?? 0
     return micros / 1_000_000
 }
 
-func googleLegacyPriceObject(value: Double, currency: String) -> [String: Any] {
+public func googleLegacyPriceObject(value: Double, currency: String) -> [String: Any] {
     [
         "priceMicros": String(Int64((value * 1_000_000).rounded())),
         "currency": currency
     ]
 }
 
-func googleLegacyCatalogRequiresMigration(_ error: Error) -> Bool {
+public func googleLegacyCatalogRequiresMigration(_ error: Error) -> Bool {
     guard case let APIError.http(status, message) = error, status == 403 else { return false }
     return message.localizedCaseInsensitiveContains("migrate to the new publishing API")
 }
 
-func googlePriceRegionsIncludingUSBase(
+public func googlePriceRegionsIncludingUSBase(
     _ regions: [PriceRegion],
     proposedBasePrice: Double,
     currentBasePrice: Double
@@ -756,7 +756,7 @@ func googlePriceRegionsIncludingUSBase(
     return result
 }
 
-func googleRegionsRequiringPriceChange(
+public func googleRegionsRequiringPriceChange(
     _ regions: [PriceRegion],
     convertedRegionCodes: Set<String>
 ) -> [PriceRegion] {

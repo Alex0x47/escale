@@ -1,7 +1,10 @@
+import EscaleCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct ScreenshotsView: View {
+public struct ScreenshotsView: View {
+    public init() {}
+
     @EnvironmentObject private var store: WorkspaceStore
     @State private var selectedLocale = "en-US"
     @State private var device = "Phone"
@@ -24,7 +27,7 @@ struct ScreenshotsView: View {
         }
     }
 
-    var body: some View {
+    public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 23) {
                 HStack(alignment: .bottom) {
@@ -81,7 +84,7 @@ struct ScreenshotsView: View {
                     VStack(alignment: .leading, spacing: 9) {
                         Label("Store asset upload", systemImage: "arrow.up.circle")
                             .font(.headline).foregroundStyle(Theme.accent)
-                        Text("Upload a PNG or JPEG to the selected store and locale. Gouvernail uses each store’s native asset-upload transaction and refreshes the live gallery afterward.")
+                        Text("Upload a PNG or JPEG to the selected store and locale. Escale uses each store’s native asset-upload transaction and refreshes the live gallery afterward.")
                             .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer()

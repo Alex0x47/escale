@@ -1,6 +1,9 @@
+import EscaleCore
 import SwiftUI
 
-struct OverviewView: View {
+public struct OverviewView: View {
+    public init() {}
+
     @EnvironmentObject private var store: WorkspaceStore
     @State private var showsAndroidLinker = false
 
@@ -30,7 +33,7 @@ struct OverviewView: View {
         Set(store.selectedProducts.flatMap { $0.regions.map(\.code) }).count
     }
 
-    var body: some View {
+    public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 26) {
                 if let app = store.selectedApp {
@@ -326,7 +329,7 @@ private struct AndroidAppLinkView: View {
                             .font(.caption2.weight(.bold))
                             .tracking(0.8)
                             .foregroundStyle(.secondary)
-                        Text("Google’s API cannot list every app in an account. Enter the exact package name and Gouvernail will verify access, fetch its live data, and link it here.")
+                        Text("Google’s API cannot list every app in an account. Enter the exact package name and Escale will verify access, fetch its live data, and link it here.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)

@@ -2,21 +2,21 @@ import CryptoKit
 import Foundation
 import Security
 
-struct AppleCredentials: Codable, Sendable {
-    let issuerID: String
-    let keyID: String
-    let privateKeyPEM: String
+public struct AppleCredentials: Codable, Sendable {
+    public let issuerID: String
+    public let keyID: String
+    public let privateKeyPEM: String
 }
 
-struct GoogleServiceAccount: Codable, Sendable {
-    let type: String?
-    let projectID: String?
-    let privateKeyID: String
-    let privateKey: String
-    let clientEmail: String
-    let tokenURI: String
+public struct GoogleServiceAccount: Codable, Sendable {
+    public let type: String?
+    public let projectID: String?
+    public let privateKeyID: String
+    public let privateKey: String
+    public let clientEmail: String
+    public let tokenURI: String
 
-    enum CodingKeys: String, CodingKey {
+    public enum CodingKeys: String, CodingKey {
         case type
         case projectID = "project_id"
         case privateKeyID = "private_key_id"
@@ -27,8 +27,9 @@ struct GoogleServiceAccount: Codable, Sendable {
 }
 
 @MainActor
-enum CredentialStore {
-    private static let service = "app.gouvernail.mac.credentials"
+public enum CredentialStore {
+    private static let service = "app.escale.mac.credentials"
+    private static let legacyService = "app.gouvernail.mac.credentials"
     private static let appleAccount = "app-store-connect"
     private static let googleAccount = "google-play-service-account"
     private static let openAIAccount = "openai-api-key"
@@ -43,15 +44,15 @@ enum CredentialStore {
     private static var cachedOpenAIAPIKey: String?
     private static var hasLoadedOpenAIAPIKey = false
 
-    static func saveApple(_ credentials: AppleCredentials) throws {
+    public static func saveApple(_ credentials: AppleCredentials) throws {
         try KeychainStore.save(try JSONEncoder().encode(credentials), service: service, account: appleAccount)
         cachedApple = credentials
         hasLoadedApple = true
     }
 
-    static func apple() throws -> AppleCredentials? {
+    public static func apple() throws -> AppleCredentials? {
         if hasLoadedApple { return cachedApple }
-        guard let data = try KeychainStore.read(service: service, account: appleAccount) else {
+        guard let data = try readMigrating(account: appleAccount) else {
             hasLoadedApple = true
             return nil
         }
@@ -61,15 +62,15 @@ enum CredentialStore {
         return credentials
     }
 
-    static func saveGoogle(_ credentials: GoogleServiceAccount) throws {
+    public static func saveGoogle(_ credentials: GoogleServiceAccount) throws {
         try KeychainStore.save(try JSONEncoder().encode(credentials), service: service, account: googleAccount)
         cachedGoogle = credentials
         hasLoadedGoogle = true
     }
 
-    static func google() throws -> GoogleServiceAccount? {
+    public static func google() throws -> GoogleServiceAccount? {
         if hasLoadedGoogle { return cachedGoogle }
-        guard let data = try KeychainStore.read(service: service, account: googleAccount) else {
+        guard let data = try readMigrating(account: googleAccount) else {
             hasLoadedGoogle = true
             return nil
         }
@@ -79,7 +80,7 @@ enum CredentialStore {
         return credentials
     }
 
-    static func saveOpenAIAPIKey(_ apiKey: String) throws {
+    public static func saveOpenAIAPIKey(_ apiKey: String) throws {
         let clean = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard clean.count >= 20 else {
             throw APIError.invalidCredentials("Enter a complete OpenAI API key.")
@@ -94,9 +95,12 @@ enum CredentialStore {
         hasLoadedOpenAIAPIKey = true
     }
 
-    static func openAIAPIKey() throws -> String? {
+    public static func openAIAPIKey() throws -> String? {
         if hasLoadedOpenAIAPIKey { return cachedOpenAIAPIKey }
-        guard let data = try KeychainStore.read(service: service, account: openAIAccount) else {
+        guard let data = try readMigrating(
+            account: openAIAccount,
+            accessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        ) else {
             hasLoadedOpenAIAPIKey = true
             return nil
         }
@@ -106,14 +110,17 @@ enum CredentialStore {
         return value
     }
 
-    static func removeOpenAIAPIKey() throws {
+    public static func removeOpenAIAPIKey() throws {
         try KeychainStore.delete(service: service, account: openAIAccount)
+        try KeychainStore.delete(service: legacyService, account: openAIAccount)
         cachedOpenAIAPIKey = nil
         hasLoadedOpenAIAPIKey = true
     }
 
-    static func remove(_ platform: StorePlatform) throws {
-        try KeychainStore.delete(service: service, account: platform == .appStore ? appleAccount : googleAccount)
+    public static func remove(_ platform: StorePlatform) throws {
+        let account = platform == .appStore ? appleAccount : googleAccount
+        try KeychainStore.delete(service: service, account: account)
+        try KeychainStore.delete(service: legacyService, account: account)
         if platform == .appStore {
             cachedApple = nil
             hasLoadedApple = true
@@ -122,10 +129,29 @@ enum CredentialStore {
             hasLoadedGoogle = true
         }
     }
+
+    private static func readMigrating(
+        account: String,
+        accessible: CFString = kSecAttrAccessibleAfterFirstUnlock
+    ) throws -> Data? {
+        if let data = try KeychainStore.read(service: service, account: account) {
+            return data
+        }
+        guard let legacyData = try KeychainStore.read(service: legacyService, account: account) else {
+            return nil
+        }
+        try KeychainStore.save(
+            legacyData,
+            service: service,
+            account: account,
+            accessible: accessible
+        )
+        return legacyData
+    }
 }
 
-enum KeychainStore {
-    static func save(
+public enum KeychainStore {
+    public static func save(
         _ data: Data,
         service: String,
         account: String,
@@ -151,7 +177,7 @@ enum KeychainStore {
         }
     }
 
-    static func read(service: String, account: String) throws -> Data? {
+    public static func read(service: String, account: String) throws -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -166,7 +192,7 @@ enum KeychainStore {
         return data
     }
 
-    static func delete(service: String, account: String) throws {
+    public static func delete(service: String, account: String) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -177,7 +203,7 @@ enum KeychainStore {
     }
 }
 
-enum APIError: LocalizedError, Sendable {
+public enum APIError: LocalizedError, Sendable {
     case missingCredentials(StorePlatform)
     case invalidCredentials(String)
     case invalidResponse
@@ -186,7 +212,7 @@ enum APIError: LocalizedError, Sendable {
     case signing(String)
     case unsupported(String)
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .missingCredentials(let platform): "Connect \(platform.rawValue) before continuing."
         case .invalidCredentials(let message): "Invalid credentials: \(message)"
@@ -199,8 +225,8 @@ enum APIError: LocalizedError, Sendable {
     }
 }
 
-enum JWTSigner {
-    static func appleToken(credentials: AppleCredentials, now: Date = Date()) throws -> String {
+public enum JWTSigner {
+    public static func appleToken(credentials: AppleCredentials, now: Date = Date()) throws -> String {
         let header: [String: Any] = ["alg": "ES256", "kid": credentials.keyID, "typ": "JWT"]
         let issuedAt = Int(now.timeIntervalSince1970)
         let claims: [String: Any] = [
@@ -219,7 +245,7 @@ enum JWTSigner {
         }
     }
 
-    static func googleAssertion(credentials: GoogleServiceAccount, now: Date = Date()) throws -> String {
+    public static func googleAssertion(credentials: GoogleServiceAccount, now: Date = Date()) throws -> String {
         let header: [String: Any] = ["alg": "RS256", "typ": "JWT", "kid": credentials.privateKeyID]
         let issuedAt = Int(now.timeIntervalSince1970)
         let claims: [String: Any] = [
@@ -281,7 +307,7 @@ enum JWTSigner {
 }
 
 extension Data {
-    func base64URLEncodedString() -> String {
+    public func base64URLEncodedString() -> String {
         base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
@@ -289,13 +315,13 @@ extension Data {
     }
 }
 
-struct HTTPResponse: Sendable {
-    let data: Data
-    let response: HTTPURLResponse
+public struct HTTPResponse: Sendable {
+    public let data: Data
+    public let response: HTTPURLResponse
 }
 
-enum HTTPTransport {
-    static func send(
+public enum HTTPTransport {
+    public static func send(
         url: URL,
         method: String = "GET",
         headers: [String: String] = [:],
@@ -306,7 +332,7 @@ enum HTTPTransport {
         request.httpMethod = method
         request.httpBody = body
         request.timeoutInterval = timeout
-        request.setValue("Gouvernail/0.2 macOS", forHTTPHeaderField: "User-Agent")
+        request.setValue("Escale/0.2 macOS", forHTTPHeaderField: "User-Agent")
         headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
@@ -316,7 +342,7 @@ enum HTTPTransport {
         return HTTPResponse(data: data, response: http)
     }
 
-    static func jsonBody(_ object: Any) throws -> Data {
+    public static func jsonBody(_ object: Any) throws -> Data {
         try JSONSerialization.data(withJSONObject: object, options: [.withoutEscapingSlashes])
     }
 
@@ -336,7 +362,7 @@ enum HTTPTransport {
 }
 
 extension URL {
-    func appendingQueryItems(_ items: [URLQueryItem]) -> URL {
+    public func appendingQueryItems(_ items: [URLQueryItem]) -> URL {
         guard var components = URLComponents(url: self, resolvingAgainstBaseURL: false) else { return self }
         components.queryItems = (components.queryItems ?? []) + items
         return components.url ?? self

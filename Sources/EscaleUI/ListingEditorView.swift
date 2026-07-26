@@ -1,7 +1,10 @@
 import AppKit
+import EscaleCore
 import SwiftUI
 
-struct ListingEditorView: View {
+public struct ListingEditorView: View {
+    public init() {}
+
     @EnvironmentObject private var store: WorkspaceStore
     @State private var selectedLocalizationID: UUID?
     @State private var selectedField: ListingMetadataField = .promotionalText
@@ -11,8 +14,9 @@ struct ListingEditorView: View {
     @State private var isCreatingVersion = false
     @State private var showingNewVersion = false
     @State private var newVersionNumber = ""
+    @State private var proFeature: EscaleFeature?
 
-    var body: some View {
+    public var body: some View {
         HSplitView {
             localeSidebar.frame(minWidth: 205, idealWidth: 225, maxWidth: 250)
             editor.frame(minWidth: 560)
@@ -31,6 +35,9 @@ struct ListingEditorView: View {
             }
         }
         .sheet(isPresented: $showingNewVersion) { newVersionSheet }
+        .sheet(item: $proFeature) { feature in
+            ProFeatureSheet(feature: feature)
+        }
     }
 
     private var localeSidebar: some View {
@@ -259,6 +266,10 @@ struct ListingEditorView: View {
                 Spacer()
                 Button {
                     guard !sourceLocale.isEmpty else { return }
+                    if isPrimary, !store.hasAccess(to: .bulkTranslations) {
+                        proFeature = .bulkTranslations
+                        return
+                    }
                     isTranslatingPlayReleaseNotes = true
                     Task {
                         await store.translateGooglePlayReleaseNotes(
@@ -274,7 +285,14 @@ struct ListingEditorView: View {
                             Text(isPrimary ? "Translating all…" : "Translating…")
                         }
                     } else if isPrimary {
-                        Label("AI · Translate to all", systemImage: "character.book.closed.fill")
+                        Label(
+                            store.hasAccess(to: .bulkTranslations)
+                                ? "AI · Translate to all"
+                                : "AI · Translate to all · Pro",
+                            systemImage: store.hasAccess(to: .bulkTranslations)
+                                ? "character.book.closed.fill"
+                                : "lock.fill"
+                        )
                     } else {
                         Label("AI · From primary", systemImage: "arrow.right.circle.fill")
                     }
@@ -364,7 +382,7 @@ struct ListingEditorView: View {
 
     private var newVersionSheet: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SectionTitle("Create an iOS version", subtitle: "Creates an editable App Store Connect draft. Gouvernail will not submit it for review.", eyebrow: "App Store Connect")
+            SectionTitle("Create an iOS version", subtitle: "Creates an editable App Store Connect draft. Escale will not submit it for review.", eyebrow: "App Store Connect")
             TextField("Version, for example 2.4.0", text: $newVersionNumber)
                 .textFieldStyle(.roundedBorder)
             Text("The previous live version’s promotional text is loaded automatically for every matching localization.")
@@ -436,6 +454,10 @@ struct ListingEditorView: View {
 
         return Button {
             guard let primary else { return }
+            if isPrimary, !store.hasAccess(to: .bulkTranslations) {
+                proFeature = .bulkTranslations
+                return
+            }
             translatingFields.insert(field)
             Task {
                 if isPrimary {
@@ -452,7 +474,14 @@ struct ListingEditorView: View {
                     Text(isPrimary ? "Translating all…" : "Translating…")
                 }
             } else if isPrimary {
-                Label("AI · Translate to all", systemImage: "character.book.closed.fill")
+                Label(
+                    store.hasAccess(to: .bulkTranslations)
+                        ? "AI · Translate to all"
+                        : "AI · Translate to all · Pro",
+                    systemImage: store.hasAccess(to: .bulkTranslations)
+                        ? "character.book.closed.fill"
+                        : "lock.fill"
+                )
             } else {
                 Label("AI · From primary", systemImage: "arrow.right.circle.fill")
             }

@@ -2,7 +2,36 @@ import Testing
 import CryptoKit
 import Foundation
 import Security
-@testable import Gouvernail
+@testable import EscaleCore
+
+private struct TestProEntitlements: EscaleEntitlementProviding {
+    let plan = EscalePlan.pro
+    let enabledFeatures: Set<EscaleFeature>
+
+    func hasAccess(to feature: EscaleFeature) -> Bool {
+        enabledFeatures.contains(feature)
+    }
+}
+
+@Test("Community entitlements keep every Pro capability locked")
+func communityEntitlements() {
+    let entitlements = CommunityEntitlements()
+
+    #expect(entitlements.plan == .community)
+    #expect(EscaleFeature.allCases.allSatisfy { !entitlements.hasAccess(to: $0) })
+}
+
+@Test("A private entitlement provider can unlock selected Pro capabilities")
+func extensibleProEntitlements() {
+    let entitlements = TestProEntitlements(
+        enabledFeatures: [.applyRegionalPricing, .bulkTranslations]
+    )
+
+    #expect(entitlements.plan == .pro)
+    #expect(entitlements.hasAccess(to: .applyRegionalPricing))
+    #expect(entitlements.hasAccess(to: .bulkTranslations))
+    #expect(!entitlements.hasAccess(to: .multipleDeveloperAccounts))
+}
 
 @Test("Demo workspace links matching store identifiers")
 func linkedStoreIdentifiers() {
@@ -343,12 +372,12 @@ func editableAppInfoSelection() {
 @Test("Unchanged App Info fields are omitted from localization updates")
 func unchangedAppInfoFieldsAreOmitted() {
     #expect(changedAppInfoLocalizationAttributes(
-        title: "Gouvernail", subtitle: "Store operations",
-        remoteTitle: "Gouvernail", remoteSubtitle: "Store operations"
+        title: "Escale", subtitle: "Store operations",
+        remoteTitle: "Escale", remoteSubtitle: "Store operations"
     ).isEmpty)
     #expect(changedAppInfoLocalizationAttributes(
-        title: "Gouvernail", subtitle: "Faster store operations",
-        remoteTitle: "Gouvernail", remoteSubtitle: "Store operations"
+        title: "Escale", subtitle: "Faster store operations",
+        remoteTitle: "Escale", remoteSubtitle: "Store operations"
     ) == ["subtitle": "Faster store operations"])
 }
 
@@ -493,7 +522,7 @@ func basePriceDraftParsing() {
 
 @Test("Optional live pricing-index sources smoke test")
 func livePricingIndexes() async throws {
-    guard ProcessInfo.processInfo.environment["GOUVERNAIL_LIVE_PRICING_INDEX"] == "1" else { return }
+    guard ProcessInfo.processInfo.environment["ESCALE_LIVE_PRICING_INDEX"] == "1" else { return }
     for index in PricingIndex.allCases {
         let result = try await PricingIndexService().factors(for: index)
         #expect(result.factors["US"] == 1)
@@ -618,9 +647,9 @@ func openAIOutputLimits() {
 @Test("Optional live App Store Connect read smoke test")
 func liveAppleRead() async throws {
     let environment = ProcessInfo.processInfo.environment
-    guard let issuer = environment["GOUVERNAIL_APPLE_ISSUER_ID"],
-          let keyID = environment["GOUVERNAIL_APPLE_KEY_ID"],
-          let keyPath = environment["GOUVERNAIL_APPLE_P8_PATH"] else { return }
+    guard let issuer = environment["ESCALE_APPLE_ISSUER_ID"],
+          let keyID = environment["ESCALE_APPLE_KEY_ID"],
+          let keyPath = environment["ESCALE_APPLE_P8_PATH"] else { return }
     let pem = try String(contentsOfFile: keyPath, encoding: .utf8)
     let apps = try await AppStoreConnectClient(credentials: AppleCredentials(issuerID: issuer, keyID: keyID, privateKeyPEM: pem)).listApps()
     #expect(apps.allSatisfy { !$0.storeID.isEmpty && !$0.bundleID.isEmpty })
@@ -629,8 +658,8 @@ func liveAppleRead() async throws {
 @Test("Optional live Google Play package smoke test")
 func liveGoogleRead() async throws {
     let environment = ProcessInfo.processInfo.environment
-    guard let jsonPath = environment["GOUVERNAIL_GOOGLE_SERVICE_ACCOUNT_PATH"],
-          let packageName = environment["GOUVERNAIL_GOOGLE_PACKAGE"] else { return }
+    guard let jsonPath = environment["ESCALE_GOOGLE_SERVICE_ACCOUNT_PATH"],
+          let packageName = environment["ESCALE_GOOGLE_PACKAGE"] else { return }
     let data = try Data(contentsOf: URL(fileURLWithPath: jsonPath))
     let credentials = try JSONDecoder().decode(GoogleServiceAccount.self, from: data)
     let snapshot = try await GooglePlayClient(credentials: credentials).fetchSnapshot(packageName: packageName)
@@ -639,6 +668,6 @@ func liveGoogleRead() async throws {
 
 @Test("Optional live OpenAI credential smoke test")
 func liveOpenAIRead() async throws {
-    guard let apiKey = ProcessInfo.processInfo.environment["GOUVERNAIL_OPENAI_API_KEY"] else { return }
+    guard let apiKey = ProcessInfo.processInfo.environment["ESCALE_OPENAI_API_KEY"] else { return }
     try await OpenAIClient(apiKey: apiKey).validateConnection()
 }

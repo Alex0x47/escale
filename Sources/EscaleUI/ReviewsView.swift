@@ -1,6 +1,9 @@
+import EscaleCore
 import SwiftUI
 
-struct ReviewsView: View {
+public struct ReviewsView: View {
+    public init() {}
+
     @EnvironmentObject private var store: WorkspaceStore
     @State private var selectedReviewID: UUID?
     @State private var ratingFilter = 0
@@ -23,7 +26,7 @@ struct ReviewsView: View {
         return average.formatted(.number.precision(.fractionLength(1)))
     }
 
-    var body: some View {
+    public var body: some View {
         VStack(spacing: 0) {
             header
             Divider()

@@ -2,38 +2,54 @@ import Foundation
 import SwiftUI
 
 @MainActor
-final class WorkspaceStore: ObservableObject {
-    @Published var workspace: Workspace
-    @Published var selectedAppID: UUID? {
+public final class WorkspaceStore: ObservableObject {
+    @Published public var workspace: Workspace
+    @Published public var selectedAppID: UUID? {
         didSet {
             if let selectedAppID { UserDefaults.standard.set(selectedAppID.uuidString, forKey: selectedAppKey) }
             else { UserDefaults.standard.removeObject(forKey: selectedAppKey) }
         }
     }
-    @Published var selectedSection: AppSection = .overview
-    @Published var platformFilter: PlatformFilter = .both
-    @Published var isOnboardingPresented: Bool
-    @Published var isSyncing = false
-    @Published var toast: ToastMessage?
-    @Published private(set) var isDemoMode: Bool
-    @Published private(set) var loadingAppIDs: Set<UUID> = []
-    @Published private(set) var loadedAppIDs: Set<UUID> = []
-    @Published private(set) var appSyncIssues: [UUID: [String]] = [:]
-    @Published private(set) var appRefreshProgressByID: [UUID: AppRefreshProgress] = [:]
-    @Published private(set) var isOpenAIKeyConfigured = false
-    @Published private(set) var calculatingProductIDs: Set<UUID> = []
-    @Published private(set) var pricingApplyProgressByProductID: [UUID: PricingApplyProgress] = [:]
+    @Published public var selectedSection: AppSection = .overview
+    @Published public var platformFilter: PlatformFilter = .both
+    @Published public var isOnboardingPresented: Bool
+    @Published public var isSyncing = false
+    @Published public var toast: ToastMessage?
+    @Published public private(set) var isDemoMode: Bool
+    @Published public private(set) var loadingAppIDs: Set<UUID> = []
+    @Published public private(set) var loadedAppIDs: Set<UUID> = []
+    @Published public private(set) var appSyncIssues: [UUID: [String]] = [:]
+    @Published public private(set) var appRefreshProgressByID: [UUID: AppRefreshProgress] = [:]
+    @Published public private(set) var isOpenAIKeyConfigured = false
+    @Published public private(set) var calculatingProductIDs: Set<UUID> = []
+    @Published public private(set) var pricingApplyProgressByProductID: [UUID: PricingApplyProgress] = [:]
 
-    private let persistenceKey = "gouvernail.workspace.v2"
-    private let onboardingKey = "gouvernail.onboarding.complete.v2"
-    private let demoKey = "gouvernail.demo-mode"
-    private let selectedAppKey = "gouvernail.selected-app.v1"
+    public let entitlements: any EscaleEntitlementProviding
 
-    init() {
+    private let persistenceKey = "escale.workspace.v2"
+    private let onboardingKey = "escale.onboarding.complete.v2"
+    private let demoKey = "escale.demo-mode"
+    private let selectedAppKey = "escale.selected-app.v1"
+    private let legacyPersistenceKey = "gouvernail.workspace.v2"
+    private let legacyOnboardingKey = "gouvernail.onboarding.complete.v2"
+    private let legacyDemoKey = "gouvernail.demo-mode"
+    private let legacySelectedAppKey = "gouvernail.selected-app.v1"
+    private let legacyDefaultsDomain = "app.gouvernail.mac"
+
+    public init(entitlements: any EscaleEntitlementProviding = CommunityEntitlements()) {
+        self.entitlements = entitlements
+        let defaults = UserDefaults.standard
+        let legacyDomain = defaults.persistentDomain(forName: legacyDefaultsDomain) ?? [:]
+        let persistedWorkspace = defaults.data(forKey: persistenceKey)
+            ?? defaults.data(forKey: legacyPersistenceKey)
+            ?? legacyDomain[legacyPersistenceKey] as? Data
         var loadedWorkspace: Workspace
-        if let data = UserDefaults.standard.data(forKey: persistenceKey),
+        if let data = persistedWorkspace,
            let saved = try? JSONDecoder().decode(Workspace.self, from: data) {
             loadedWorkspace = saved
+            if defaults.data(forKey: persistenceKey) == nil {
+                defaults.set(data, forKey: persistenceKey)
+            }
         } else {
             loadedWorkspace = .empty
         }
@@ -43,32 +59,87 @@ final class WorkspaceStore: ObservableObject {
             )
         }
         workspace = loadedWorkspace
-        let savedSelection = UserDefaults.standard.string(forKey: selectedAppKey).flatMap(UUID.init(uuidString:))
+        let savedSelectionValue = defaults.string(forKey: selectedAppKey)
+            ?? defaults.string(forKey: legacySelectedAppKey)
+            ?? legacyDomain[legacySelectedAppKey] as? String
+        if defaults.string(forKey: selectedAppKey) == nil, let savedSelectionValue {
+            defaults.set(savedSelectionValue, forKey: selectedAppKey)
+        }
+        let savedSelection = savedSelectionValue.flatMap(UUID.init(uuidString:))
         selectedAppID = savedSelection.flatMap { savedID in loadedWorkspace.apps.contains(where: { $0.id == savedID }) ? savedID : nil }
             ?? loadedWorkspace.apps.first?.id
-        isOnboardingPresented = !UserDefaults.standard.bool(forKey: onboardingKey)
-        isDemoMode = UserDefaults.standard.bool(forKey: demoKey)
+        let onboardingComplete = Self.migratedBoolean(
+            defaults: defaults,
+            currentKey: onboardingKey,
+            legacyKey: legacyOnboardingKey,
+            legacyDomain: legacyDomain
+        )
+        isOnboardingPresented = !onboardingComplete
+        isDemoMode = Self.migratedBoolean(
+            defaults: defaults,
+            currentKey: demoKey,
+            legacyKey: legacyDemoKey,
+            legacyDomain: legacyDomain
+        )
         loadedAppIDs = cachedAppIDs(in: loadedWorkspace)
     }
 
-    var selectedApp: UnifiedApp? { workspace.apps.first(where: { $0.id == selectedAppID }) }
-    var selectedLocalizations: [ListingLocalization] {
+    public func hasAccess(to feature: EscaleFeature) -> Bool {
+        entitlements.hasAccess(to: feature)
+    }
+
+    @discardableResult
+    public func requireAccess(to feature: EscaleFeature) -> Bool {
+        guard hasAccess(to: feature) else {
+            showToast(
+                "Escale Pro required",
+                detail: feature.upgradeDescription,
+                kind: .neutral
+            )
+            return false
+        }
+        return true
+    }
+
+    private static func migratedBoolean(
+        defaults: UserDefaults,
+        currentKey: String,
+        legacyKey: String,
+        legacyDomain: [String: Any]
+    ) -> Bool {
+        if defaults.object(forKey: currentKey) != nil {
+            return defaults.bool(forKey: currentKey)
+        }
+        if defaults.object(forKey: legacyKey) != nil {
+            let legacyValue = defaults.bool(forKey: legacyKey)
+            defaults.set(legacyValue, forKey: currentKey)
+            return legacyValue
+        }
+        if let legacyValue = legacyDomain[legacyKey] as? Bool {
+            defaults.set(legacyValue, forKey: currentKey)
+            return legacyValue
+        }
+        return false
+    }
+
+    public var selectedApp: UnifiedApp? { workspace.apps.first(where: { $0.id == selectedAppID }) }
+    public var selectedLocalizations: [ListingLocalization] {
         let platforms = selectedEditingPlatforms
         return (selectedAppID.flatMap { workspace.localizationsByApp[$0] } ?? [])
             .map { listingLocalization($0, displaying: platforms) }
     }
-    var selectedScreenshots: [StoreScreenshot] { selectedAppID.flatMap { workspace.screenshotsByApp[$0] } ?? [] }
-    var selectedProducts: [StoreProduct] { selectedAppID.flatMap { workspace.productsByApp[$0] } ?? [] }
-    var selectedReviews: [CustomerReview] { selectedAppID.flatMap { workspace.reviewsByApp[$0] } ?? [] }
-    var isSelectedAppLoading: Bool { selectedAppID.map(loadingAppIDs.contains) ?? false }
-    var selectedAppSyncIssues: [String] { selectedAppID.flatMap { appSyncIssues[$0] } ?? [] }
-    var selectedAppHasLiveData: Bool { selectedAppID.map(loadedAppIDs.contains) ?? false }
-    var selectedAppRefreshProgress: AppRefreshProgress? { selectedAppID.flatMap { appRefreshProgressByID[$0] } }
-    var selectedAvailablePlatforms: Set<StorePlatform> { selectedAppID.map(availablePlatforms) ?? [] }
-    var selectedEditingPlatforms: Set<StorePlatform> {
+    public var selectedScreenshots: [StoreScreenshot] { selectedAppID.flatMap { workspace.screenshotsByApp[$0] } ?? [] }
+    public var selectedProducts: [StoreProduct] { selectedAppID.flatMap { workspace.productsByApp[$0] } ?? [] }
+    public var selectedReviews: [CustomerReview] { selectedAppID.flatMap { workspace.reviewsByApp[$0] } ?? [] }
+    public var isSelectedAppLoading: Bool { selectedAppID.map(loadingAppIDs.contains) ?? false }
+    public var selectedAppSyncIssues: [String] { selectedAppID.flatMap { appSyncIssues[$0] } ?? [] }
+    public var selectedAppHasLiveData: Bool { selectedAppID.map(loadedAppIDs.contains) ?? false }
+    public var selectedAppRefreshProgress: AppRefreshProgress? { selectedAppID.flatMap { appRefreshProgressByID[$0] } }
+    public var selectedAvailablePlatforms: Set<StorePlatform> { selectedAppID.map(availablePlatforms) ?? [] }
+    public var selectedEditingPlatforms: Set<StorePlatform> {
         platformFilter.platforms.intersection(selectedAvailablePlatforms)
     }
-    var selectedPrimaryLocalization: ListingLocalization? {
+    public var selectedPrimaryLocalization: ListingLocalization? {
         let preferredLocale: String? = if selectedEditingPlatforms == [.playStore] {
             selectedApp?.playStoreApp?.primaryLocale
         } else {
@@ -79,7 +150,7 @@ final class WorkspaceStore: ObservableObject {
             preferredLocale: preferredLocale
         )
     }
-    var selectedGooglePrimaryLocalization: ListingLocalization? {
+    public var selectedGooglePrimaryLocalization: ListingLocalization? {
         guard let appID = selectedAppID else { return nil }
         let localizations = workspace.localizationsByApp[appID, default: []]
             .map { listingLocalization($0, displaying: [.playStore]) }
@@ -88,18 +159,18 @@ final class WorkspaceStore: ObservableObject {
             preferredLocale: selectedApp?.playStoreApp?.primaryLocale
         )
     }
-    var selectedGooglePlayReleaseNotesBlock: String {
+    public var selectedGooglePlayReleaseNotesBlock: String {
         guard let appID = selectedAppID else { return "" }
         return workspace.googlePlayReleaseNotesByApp?[appID] ?? ""
     }
 
-    func completeOnboarding() {
+    public func completeOnboarding() {
         UserDefaults.standard.set(true, forKey: onboardingKey)
         withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) { isOnboardingPresented = false }
         showToast("Workspace ready", detail: isDemoMode ? "Demo workspace loaded." : "Connected stores are ready to sync.", kind: .success)
     }
 
-    func startDemoMode() {
+    public func startDemoMode() {
         isDemoMode = true
         UserDefaults.standard.set(true, forKey: demoKey)
         workspace = SampleData.workspace()
@@ -108,7 +179,7 @@ final class WorkspaceStore: ObservableObject {
         completeOnboarding()
     }
 
-    func leaveDemoMode() {
+    public func leaveDemoMode() {
         isDemoMode = false
         UserDefaults.standard.set(false, forKey: demoKey)
         workspace = .empty
@@ -117,12 +188,12 @@ final class WorkspaceStore: ObservableObject {
         isOnboardingPresented = true
     }
 
-    func resetOnboarding() {
+    public func resetOnboarding() {
         UserDefaults.standard.set(false, forKey: onboardingKey)
         isOnboardingPresented = true
     }
 
-    func connectApple(issuerID: String, keyID: String, privateKeyPEM: String) async throws {
+    public func connectApple(issuerID: String, keyID: String, privateKeyPEM: String) async throws {
         let credentials = AppleCredentials(
             issuerID: issuerID.trimmingCharacters(in: .whitespacesAndNewlines),
             keyID: keyID.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -145,7 +216,7 @@ final class WorkspaceStore: ObservableObject {
         showToast("App Store connected", detail: detail, kind: .success)
     }
 
-    func connectGoogle(serviceAccountData: Data) async throws {
+    public func connectGoogle(serviceAccountData: Data) async throws {
         let decoder = JSONDecoder()
         let credentials: GoogleServiceAccount
         do { credentials = try decoder.decode(GoogleServiceAccount.self, from: serviceAccountData) }
@@ -162,7 +233,7 @@ final class WorkspaceStore: ObservableObject {
         showToast("Google credentials verified", detail: "Add a package name to verify Play Console access.", kind: .success)
     }
 
-    func disconnect(_ platform: StorePlatform) throws {
+    public func disconnect(_ platform: StorePlatform) throws {
         try CredentialStore.remove(platform)
         if let index = workspace.connections.firstIndex(where: { $0.platform == platform }) {
             workspace.connections[index] = StoreConnection(platform: platform, accountName: platform.rawValue, detail: "Not connected", state: .disconnected, lastSync: nil)
@@ -170,7 +241,7 @@ final class WorkspaceStore: ObservableObject {
         persist()
     }
 
-    func refreshOpenAIConfigurationStatus() {
+    public func refreshOpenAIConfigurationStatus() {
         do {
             isOpenAIKeyConfigured = try CredentialStore.openAIAPIKey() != nil
         } catch {
@@ -179,24 +250,24 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
-    func saveOpenAIAPIKey(_ apiKey: String) throws {
+    public func saveOpenAIAPIKey(_ apiKey: String) throws {
         try CredentialStore.saveOpenAIAPIKey(apiKey)
         isOpenAIKeyConfigured = true
         showToast("OpenAI key saved", detail: "The key is protected by macOS Keychain.", kind: .success)
     }
 
-    func removeOpenAIAPIKey() throws {
+    public func removeOpenAIAPIKey() throws {
         try CredentialStore.removeOpenAIAPIKey()
         isOpenAIKeyConfigured = false
         showToast("OpenAI key removed", detail: "AI features are now disabled.", kind: .neutral)
     }
 
-    func testOpenAIConnection() async throws {
+    public func testOpenAIConnection() async throws {
         guard let apiKey = try CredentialStore.openAIAPIKey() else { throw OpenAIClientError.missingAPIKey }
         try await OpenAIClient(apiKey: apiKey).validateConnection()
     }
 
-    func addAndroidPackage(_ packageName: String) async throws {
+    public func addAndroidPackage(_ packageName: String) async throws {
         let clean = packageName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { throw APIError.invalidCredentials("Enter an Android package name.") }
         guard !workspace.apps.contains(where: { $0.playStoreApp?.bundleID == clean }) else {
@@ -214,7 +285,7 @@ final class WorkspaceStore: ObservableObject {
         showToast("Google Play app added", detail: "\(snapshot.app.name) is synced and ready.", kind: .success)
     }
 
-    func addAndLinkAndroidPackage(_ packageName: String, to appStoreAppID: UUID) async throws {
+    public func addAndLinkAndroidPackage(_ packageName: String, to appStoreAppID: UUID) async throws {
         let clean = packageName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { throw APIError.invalidCredentials("Enter an Android package name.") }
         guard let source = workspace.apps.first(where: { $0.id == appStoreAppID }),
@@ -257,7 +328,7 @@ final class WorkspaceStore: ObservableObject {
         showToast("Android app linked", detail: "\(clean) and its live Play data are ready in this workspace.", kind: .success)
     }
 
-    func link(appStoreApp sourceID: UUID, toPlayStoreApp targetID: UUID) {
+    public func link(appStoreApp sourceID: UUID, toPlayStoreApp targetID: UUID) {
         guard let sourceIndex = workspace.apps.firstIndex(where: { $0.id == sourceID }),
               let targetIndex = workspace.apps.firstIndex(where: { $0.id == targetID }),
               let android = workspace.apps[targetIndex].playStoreApp else { return }
@@ -274,7 +345,7 @@ final class WorkspaceStore: ObservableObject {
         persist()
     }
 
-    func localizationBinding(id: UUID) -> Binding<ListingLocalization> {
+    public func localizationBinding(id: UUID) -> Binding<ListingLocalization> {
         Binding(
             get: { [weak self] in
                 guard let self, let appID = self.selectedAppID,
@@ -301,11 +372,11 @@ final class WorkspaceStore: ObservableObject {
         )
     }
 
-    func googlePlayReleaseNoteLocale(for localization: ListingLocalization) -> String {
+    public func googlePlayReleaseNoteLocale(for localization: ListingLocalization) -> String {
         localization.googleLanguage ?? googleLocale(forAppleLocale: localization.locale)
     }
 
-    func googlePlayReleaseNoteBinding(locale: String) -> Binding<String> {
+    public func googlePlayReleaseNoteBinding(locale: String) -> Binding<String> {
         Binding(
             get: { [weak self] in
                 guard let self else { return "" }
@@ -317,7 +388,7 @@ final class WorkspaceStore: ObservableObject {
         )
     }
 
-    func googlePlayReleaseNotesBlockBinding() -> Binding<String> {
+    public func googlePlayReleaseNotesBlockBinding() -> Binding<String> {
         Binding(
             get: { [weak self] in self?.selectedGooglePlayReleaseNotesBlock ?? "" },
             set: { [weak self] block in
@@ -331,7 +402,10 @@ final class WorkspaceStore: ObservableObject {
         )
     }
 
-    func translateGooglePlayReleaseNotes(from sourceLocale: String, to targetLocale: String? = nil) async {
+    public func translateGooglePlayReleaseNotes(from sourceLocale: String, to targetLocale: String? = nil) async {
+        if targetLocale == nil {
+            guard requireAccess(to: .bulkTranslations) else { return }
+        }
         guard let appID = selectedAppID else { return }
         let sourceText = googlePlayReleaseNote(in: selectedGooglePlayReleaseNotesBlock, locale: sourceLocale)
         guard !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -428,7 +502,7 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
-    func addLocalization(locale: String, language: String) {
+    public func addLocalization(locale: String, language: String) {
         guard let appID = selectedAppID,
               workspace.localizationsByApp[appID]?.contains(where: { $0.locale.caseInsensitiveCompare(locale) == .orderedSame }) != true else { return }
         let source = workspace.localizationsByApp[appID]?.first(where: { $0.locale.lowercased().hasPrefix("en") })
@@ -446,7 +520,7 @@ final class WorkspaceStore: ObservableObject {
         showToast("Localization added", detail: "Complete the \(language) copy, then publish it to the stores.", kind: .success)
     }
 
-    func translateLocalization(id: UUID, from sourceID: UUID) async {
+    public func translateLocalization(id: UUID, from sourceID: UUID) async {
         guard let appID = selectedAppID,
               let storedSource = workspace.localizationsByApp[appID]?.first(where: { $0.id == sourceID }),
               let target = workspace.localizationsByApp[appID]?.first(where: { $0.id == id }) else { return }
@@ -489,11 +563,12 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
-    func translateField(_ field: ListingMetadataField, from sourceID: UUID, to targetID: UUID) async {
+    public func translateField(_ field: ListingMetadataField, from sourceID: UUID, to targetID: UUID) async {
         await translateField(field, from: sourceID, to: [targetID], announcesAllLocales: false)
     }
 
-    func translateFieldToAllLocales(_ field: ListingMetadataField, from sourceID: UUID) async {
+    public func translateFieldToAllLocales(_ field: ListingMetadataField, from sourceID: UUID) async {
+        guard requireAccess(to: .bulkTranslations) else { return }
         guard let appID = selectedAppID else { return }
         let targetIDs = workspace.localizationsByApp[appID, default: []]
             .filter { $0.id != sourceID }
@@ -598,7 +673,7 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
-    func createAppStoreVersion(_ versionString: String) async -> Bool {
+    public func createAppStoreVersion(_ versionString: String) async -> Bool {
         guard let appID = selectedAppID,
               let appIndex = workspace.apps.firstIndex(where: { $0.id == appID }),
               let appleApp = workspace.apps[appIndex].appStoreApp else { return false }
@@ -637,7 +712,7 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
-    func saveLocalization(id: UUID) async {
+    public func saveLocalization(id: UUID) async {
         guard let appID = selectedAppID,
               let app = workspace.apps.first(where: { $0.id == appID }),
               let index = workspace.localizationsByApp[appID]?.firstIndex(where: { $0.id == id }) else { return }
@@ -718,10 +793,10 @@ final class WorkspaceStore: ObservableObject {
         if completed == [.playStore] {
             return "Google Play accepted the metadata and kept the edit out of review."
         }
-        return "The remote stores accepted the metadata. Gouvernail did not submit it for review."
+        return "The remote stores accepted the metadata. Escale did not submit it for review."
     }
 
-    func uploadScreenshot(fileURL: URL, locale: String, device: String) async {
+    public func uploadScreenshot(fileURL: URL, locale: String, device: String) async {
         guard let appID = selectedAppID, let app = selectedApp else { return }
         let access = fileURL.startAccessingSecurityScopedResource()
         defer { if access { fileURL.stopAccessingSecurityScopedResource() } }
@@ -771,7 +846,7 @@ final class WorkspaceStore: ObservableObject {
         } catch { showError(error) }
     }
 
-    func deleteScreenshot(_ id: UUID) {
+    public func deleteScreenshot(_ id: UUID) {
         guard let appID = selectedAppID,
               let screenshot = workspace.screenshotsByApp[appID]?.first(where: { $0.id == id }) else { return }
         if isDemoMode || screenshot.remoteID == nil {
@@ -796,7 +871,7 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
-    func productBinding(id: UUID) -> Binding<StoreProduct> {
+    public func productBinding(id: UUID) -> Binding<StoreProduct> {
         Binding(
             get: { [weak self] in
                 guard let self, let appID = self.selectedAppID,
@@ -817,7 +892,7 @@ final class WorkspaceStore: ObservableObject {
         )
     }
 
-    func recalculatePPP(productID: UUID) {
+    public func recalculatePPP(productID: UUID) {
         guard let appID = selectedAppID,
               let index = workspace.productsByApp[appID]?.firstIndex(where: { $0.id == productID }) else { return }
         let base = workspace.productsByApp[appID]![index].basePrice
@@ -828,7 +903,7 @@ final class WorkspaceStore: ObservableObject {
         persist()
     }
 
-    func calculatePPP(productID: UUID) async {
+    public func calculatePPP(productID: UUID) async {
         guard let appID = selectedAppID,
               let app = selectedApp,
               let productIndex = workspace.productsByApp[appID]?.firstIndex(where: { $0.id == productID }),
@@ -871,7 +946,8 @@ final class WorkspaceStore: ObservableObject {
         } catch { showError(error) }
     }
 
-    func applyPPP(productID: UUID) async {
+    public func applyPPP(productID: UUID) async {
+        guard requireAccess(to: .applyRegionalPricing) else { return }
         guard let appID = selectedAppID,
               let app = selectedApp,
               let index = workspace.productsByApp[appID]?.firstIndex(where: { $0.id == productID }) else { return }
@@ -949,7 +1025,7 @@ final class WorkspaceStore: ObservableObject {
         )
     }
 
-    func reply(to reviewID: UUID, text: String) async {
+    public func reply(to reviewID: UUID, text: String) async {
         let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty, let appID = selectedAppID,
               let app = selectedApp,
@@ -972,7 +1048,7 @@ final class WorkspaceStore: ObservableObject {
         } catch { showError(error) }
     }
 
-    func sync() async {
+    public func sync() async {
         guard !isSyncing else { return }
         isSyncing = true
         defer { isSyncing = false }
@@ -1018,7 +1094,7 @@ final class WorkspaceStore: ObservableObject {
         else { showToast("Sync completed with issues", detail: failures.prefix(2).joined(separator: " · "), kind: .error) }
     }
 
-    func refreshSelectedApp() async {
+    public func refreshSelectedApp() async {
         guard let selectedAppID else { return }
         await refreshApp(id: selectedAppID, showFeedback: true)
     }
@@ -1106,7 +1182,7 @@ final class WorkspaceStore: ObservableObject {
         }
     }
 
-    func showToast(_ title: String, detail: String, kind: ToastKind) {
+    public func showToast(_ title: String, detail: String, kind: ToastKind) {
         let message = ToastMessage(id: UUID(), title: title, detail: detail, kind: kind)
         withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) { toast = message }
         if kind != .progress {
@@ -1329,7 +1405,7 @@ final class WorkspaceStore: ObservableObject {
     }
 }
 
-func storeProductsMatch(
+public func storeProductsMatch(
     _ existing: StoreProduct,
     _ remote: StoreProduct,
     on platform: StorePlatform
@@ -1350,7 +1426,7 @@ func storeProductsMatch(
     }
 }
 
-func splitCrossStoreProducts(_ products: [StoreProduct]) -> [StoreProduct] {
+public func splitCrossStoreProducts(_ products: [StoreProduct]) -> [StoreProduct] {
     products.flatMap { product -> [StoreProduct] in
         guard product.platforms.contains(.appStore), product.platforms.contains(.playStore) else {
             return [product]
@@ -1385,7 +1461,7 @@ private func storeProductCopy(
     )
 }
 
-func cachedAppIDs(in workspace: Workspace) -> Set<UUID> {
+public func cachedAppIDs(in workspace: Workspace) -> Set<UUID> {
     Set(workspace.apps.compactMap { app in
         let id = app.id
         let hasCachedCollections = workspace.localizationsByApp[id] != nil
@@ -1401,7 +1477,7 @@ func cachedAppIDs(in workspace: Workspace) -> Set<UUID> {
 
 /// Replaces store-owned pricing with the latest remote snapshot while retaining
 /// the user's PPP index and subscriber migration policy on the local product.
-func refreshedStoreProduct(
+public func refreshedStoreProduct(
     _ cached: StoreProduct,
     with remote: StoreProduct,
     from platform: StorePlatform
@@ -1437,7 +1513,7 @@ func refreshedStoreProduct(
 /// Moves cached listing data onto a newly created App Store version. Unsaved
 /// local copy wins over the fetched draft so edits made before version creation
 /// remain available to publish once the draft exists.
-func localizationsAfterCreatingAppStoreVersion(
+public func localizationsAfterCreatingAppStoreVersion(
     cached: [ListingLocalization],
     draft: [ListingLocalization]
 ) -> [ListingLocalization] {
@@ -1468,17 +1544,17 @@ func localizationsAfterCreatingAppStoreVersion(
     return result
 }
 
-enum ToastKind { case success, progress, neutral, error }
+public enum ToastKind { case success, progress, neutral, error }
 
-struct AppRefreshProgress: Sendable {
-    var platform: StorePlatform
-    var detail: String
-    var fraction: Double
+public struct AppRefreshProgress: Sendable {
+    public var platform: StorePlatform
+    public var detail: String
+    public var fraction: Double
 }
 
-struct ToastMessage: Identifiable {
-    let id: UUID
-    let title: String
-    let detail: String
-    let kind: ToastKind
+public struct ToastMessage: Identifiable {
+    public let id: UUID
+    public let title: String
+    public let detail: String
+    public let kind: ToastKind
 }

@@ -1,12 +1,15 @@
+import EscaleCore
 import SwiftUI
 
-struct SidebarView: View {
+public struct SidebarView: View {
+    public init() {}
+
     @EnvironmentObject private var store: WorkspaceStore
     @State private var showsConnections = false
     @State private var isProductSelectorHovered = false
     @State private var isAppSelectorPresented = false
 
-    var body: some View {
+    public var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 14) {
                 HStack(spacing: 10) {
@@ -17,7 +20,7 @@ struct SidebarView: View {
                     }
                     .frame(width: 36, height: 36)
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("Gouvernail").font(.headline)
+                        Text("Escale").font(.headline)
                         Text("Store operations").font(.caption).foregroundStyle(.secondary)
                     }
                     Spacer()
@@ -28,7 +31,7 @@ struct SidebarView: View {
                     .help("Connections and settings")
                 }
 
-                Link(destination: URL(string: "https://litefeedback.com/roadmap/Gouvernail")!) {
+                Link(destination: URL(string: "https://litefeedback.com/roadmap/Escale")!) {
                     Label("Feedback & requests", systemImage: "bubble.left.and.bubble.right.fill")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.white)
@@ -37,7 +40,7 @@ struct SidebarView: View {
                         .background(Theme.accent, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .help("Open the Gouvernail feedback board")
+                .help("Open the Escale feedback board")
             }
             .padding(16)
 

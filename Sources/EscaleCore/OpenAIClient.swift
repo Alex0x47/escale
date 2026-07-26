@@ -1,24 +1,24 @@
 import Foundation
 
-struct OpenAITranslation: Codable, Equatable, Sendable {
-    var title: String
-    var subtitle: String
-    var promotionalText: String
-    var description: String
-    var keywords: String
-    var releaseNotes: String
+public struct OpenAITranslation: Codable, Equatable, Sendable {
+    public var title: String
+    public var subtitle: String
+    public var promotionalText: String
+    public var description: String
+    public var keywords: String
+    public var releaseNotes: String
 }
 
-struct OpenAITranslationLimits: Sendable {
-    let title: Int
-    let subtitle: Int
-    let promotionalText: Int
-    let description: Int
-    let keywords: Int
-    let releaseNotes: Int
-    let platforms: Set<StorePlatform>
+public struct OpenAITranslationLimits: Sendable {
+    public let title: Int
+    public let subtitle: Int
+    public let promotionalText: Int
+    public let description: Int
+    public let keywords: Int
+    public let releaseNotes: Int
+    public let platforms: Set<StorePlatform>
 
-    static func storeListing(platforms: Set<StorePlatform>) -> Self {
+    public static func storeListing(platforms: Set<StorePlatform>) -> Self {
         Self(
             title: 30,
             subtitle: platforms.contains(.appStore) ? 30 : 80,
@@ -30,7 +30,7 @@ struct OpenAITranslationLimits: Sendable {
         )
     }
 
-    var storeDescription: String {
+    public var storeDescription: String {
         switch (platforms.contains(.appStore), platforms.contains(.playStore)) {
         case (true, true): "the Apple App Store and Google Play"
         case (true, false): "the Apple App Store"
@@ -40,18 +40,18 @@ struct OpenAITranslationLimits: Sendable {
     }
 }
 
-struct OpenAIClient: Sendable {
-    static let model = "gpt-5.6-sol"
+public struct OpenAIClient: Sendable {
+    public static let model = "gpt-5.6-sol"
 
     private let apiKey: String
     private let responsesURL = URL(string: "https://api.openai.com/v1/responses")!
     private let modelURL = URL(string: "https://api.openai.com/v1/models/\(model)")!
 
-    init(apiKey: String) {
+    public init(apiKey: String) {
         self.apiKey = apiKey
     }
 
-    func validateConnection() async throws {
+    public func validateConnection() async throws {
         do {
             _ = try await HTTPTransport.send(url: modelURL, headers: authorizationHeaders, timeout: 30)
         } catch APIError.http(let status, let message) {
@@ -59,7 +59,7 @@ struct OpenAIClient: Sendable {
         }
     }
 
-    func translate(
+    public func translate(
         source: ListingLocalization,
         targetLocale: String,
         targetLanguage: String,
@@ -130,7 +130,7 @@ struct OpenAIClient: Sendable {
         return translation
     }
 
-    func translateField(
+    public func translateField(
         sourceText: String,
         field: ListingMetadataField,
         sourceLocale: String,
@@ -193,7 +193,7 @@ struct OpenAIClient: Sendable {
         return Self.enforcingCharacterLimit(translatedText, limit: characterLimit)
     }
 
-    static func listingTranslationInstructions(limits: OpenAITranslationLimits) -> String {
+    public static func listingTranslationInstructions(limits: OpenAITranslationLimits) -> String {
         """
         You are a native \(limits.storeDescription) copywriter and app-store optimization (ASO) strategist. Localize the supplied listing from its source locale into the requested target locale. The result must be faithful, discoverable, persuasive, and ready to publish.
 
@@ -219,7 +219,7 @@ struct OpenAIClient: Sendable {
         """
     }
 
-    static func fieldTranslationInstructions(
+    public static func fieldTranslationInstructions(
         field: ListingMetadataField,
         characterLimit: Int,
         platforms: Set<StorePlatform>
@@ -245,17 +245,17 @@ struct OpenAIClient: Sendable {
         """
     }
 
-    static func enforcingCharacterLimit(_ text: String, limit: Int) -> String {
+    public static func enforcingCharacterLimit(_ text: String, limit: Int) -> String {
         String(text.prefix(max(0, limit)))
     }
 
-    static func decodeTranslationResponse(_ data: Data) throws -> OpenAITranslation {
+    public static func decodeTranslationResponse(_ data: Data) throws -> OpenAITranslation {
         let output = try structuredOutputData(data)
         do { return try JSONDecoder().decode(OpenAITranslation.self, from: output) }
         catch { throw OpenAIClientError.invalidStructuredOutput }
     }
 
-    static func decodeFieldTranslationResponse(_ data: Data) throws -> String {
+    public static func decodeFieldTranslationResponse(_ data: Data) throws -> String {
         let output = try structuredOutputData(data)
         do { return try JSONDecoder().decode(OpenAIFieldTranslation.self, from: output).translatedText }
         catch { throw OpenAIClientError.invalidStructuredOutput }
@@ -295,7 +295,7 @@ private struct OpenAIFieldTranslation: Decodable {
 }
 
 extension OpenAITranslation {
-    mutating func preserveEmptyFields(from source: ListingLocalization) {
+    public mutating func preserveEmptyFields(from source: ListingLocalization) {
         if source.title.isEmpty { title = "" }
         if source.subtitle.isEmpty { subtitle = "" }
         if source.promotionalText.isEmpty { promotionalText = "" }
@@ -304,7 +304,7 @@ extension OpenAITranslation {
         if source.releaseNotes.isEmpty { releaseNotes = "" }
     }
 
-    mutating func apply(limits: OpenAITranslationLimits) {
+    public mutating func apply(limits: OpenAITranslationLimits) {
         title = String(title.prefix(limits.title))
         subtitle = String(subtitle.prefix(limits.subtitle))
         promotionalText = String(promotionalText.prefix(limits.promotionalText))
@@ -344,7 +344,7 @@ private struct ResponseEnvelope: Decodable {
     let output: [ResponseOutput]
     let incompleteDetails: IncompleteDetails?
 
-    enum CodingKeys: String, CodingKey {
+    public enum CodingKeys: String, CodingKey {
         case status, output
         case incompleteDetails = "incomplete_details"
     }
@@ -364,7 +364,7 @@ private struct IncompleteDetails: Decodable {
     let reason: String?
 }
 
-enum OpenAIClientError: LocalizedError, Sendable {
+public enum OpenAIClientError: LocalizedError, Sendable {
     case missingAPIKey
     case api(status: Int, message: String)
     case invalidResponse
@@ -372,7 +372,7 @@ enum OpenAIClientError: LocalizedError, Sendable {
     case incomplete(String?)
     case refused(String)
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .missingAPIKey:
             "Add your OpenAI API key in Settings before using AI features."

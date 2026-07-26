@@ -1,17 +1,17 @@
 import Foundation
 
-struct PricingIndexResult: Sendable {
-    let factors: [String: Double]
-    let directMarketCount: Int
-    let sourceSummary: String
+public struct PricingIndexResult: Sendable {
+    public let factors: [String: Double]
+    public let directMarketCount: Int
+    public let sourceSummary: String
 }
 
-struct PricingIndexService: Sendable {
+public struct PricingIndexService: Sendable {
     private let worldBankURL = URL(string: "https://api.worldbank.org/v2/country/all/indicator/PA.NUS.PPP;PA.NUS.FCRF?format=json&per_page=20000&date=2020:2026&source=2")!
     private let bigMacURL = URL(string: "https://raw.githubusercontent.com/TheEconomist/big-mac-data/master/output-data/big-mac-full-index.csv")!
     private let netflixURL = URL(string: "https://raw.githubusercontent.com/tompec/netflix-prices/main/data/latest.json")!
 
-    func factors(for index: PricingIndex) async throws -> PricingIndexResult {
+    public func factors(for index: PricingIndex) async throws -> PricingIndexResult {
         let worldwide = try await fetchWorldwidePPP()
         switch index {
         case .worldwidePPP:
@@ -98,16 +98,16 @@ struct PricingIndexService: Sendable {
     private func normalized(_ value: Double) -> Double { min(1, max(0.1, value)) }
 }
 
-func iso2(fromISO3 iso3: String) -> String? {
+public func iso2(fromISO3 iso3: String) -> String? {
     let value = Locale(identifier: "en_\(iso3)").region?.identifier
     return value?.count == 2 ? value : nil
 }
 
-func countryName(for code: String) -> String {
+public func countryName(for code: String) -> String {
     Locale.current.localizedString(forRegionCode: code) ?? code
 }
 
-func flag(for code: String) -> String {
+public func flag(for code: String) -> String {
     code.uppercased().unicodeScalars.compactMap { UnicodeScalar(127397 + $0.value) }.map(String.init).joined()
 }
 

@@ -2,21 +2,33 @@
 import PackageDescription
 
 let package = Package(
-    name: "Gouvernail",
+    name: "Escale",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "Gouvernail", targets: ["Gouvernail"])
+        .library(name: "EscaleCore", targets: ["EscaleCore"]),
+        .library(name: "EscaleUI", targets: ["EscaleUI"]),
+        .executable(name: "Escale", targets: ["EscaleCommunityApp"])
     ],
     targets: [
+        .target(
+            name: "EscaleCore",
+            path: "Sources/EscaleCore"
+        ),
+        .target(
+            name: "EscaleUI",
+            dependencies: ["EscaleCore"],
+            path: "Sources/EscaleUI"
+        ),
         .executableTarget(
-            name: "Gouvernail",
-            path: "Sources/Gouvernail",
+            name: "EscaleCommunityApp",
+            dependencies: ["EscaleCore", "EscaleUI"],
+            path: "Sources/EscaleCommunityApp",
             resources: [.process("Resources")]
         ),
         .testTarget(
-            name: "GouvernailTests",
-            dependencies: ["Gouvernail"],
-            path: "Tests/GouvernailTests"
+            name: "EscaleCoreTests",
+            dependencies: ["EscaleCore"],
+            path: "Tests/EscaleCoreTests"
         )
     ]
 )

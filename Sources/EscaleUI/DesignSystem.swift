@@ -1,3 +1,4 @@
+import EscaleCore
 import SwiftUI
 
 enum Theme {

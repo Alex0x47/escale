@@ -1,8 +1,11 @@
 import AppKit
+import EscaleCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct OnboardingView: View {
+public struct OnboardingView: View {
+    public init() {}
+
     @EnvironmentObject private var store: WorkspaceStore
     @Environment(\.dismiss) private var dismiss
     @State private var step = 0
@@ -22,7 +25,7 @@ struct OnboardingView: View {
 
     private let steps = ["Welcome", "Connect", "Pair apps", "Ready"]
 
-    var body: some View {
+    public var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
                 ForEach(steps.indices, id: \.self) { index in
@@ -101,7 +104,7 @@ struct OnboardingView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Gouvernail needs your Google service account to verify that this package exists and fetch its live Play Console data.")
+            Text("Escale needs your Google service account to verify that this package exists and fetch its live Play Console data.")
         }
     }
 
@@ -115,7 +118,7 @@ struct OnboardingView: View {
                         Image(systemName: "helm").font(.system(size: 28, weight: .bold)).foregroundStyle(.white)
                     }
                     .frame(width: 58, height: 58)
-                    Text("Gouvernail").font(.system(size: 29, weight: .bold, design: .rounded))
+                    Text("Escale").font(.system(size: 29, weight: .bold, design: .rounded))
                 }
                 Text("Your stores,\nfinally in sync.")
                     .font(.system(size: 43, weight: .bold, design: .rounded))
@@ -450,8 +453,10 @@ private enum CredentialFileError: LocalizedError {
     }
 }
 
-struct SettingsView: View {
+public struct SettingsView: View {
     @EnvironmentObject private var store: WorkspaceStore
+
+    public init() {}
     @State private var presentedSheet: SettingsSheet?
     @State private var openAIAPIKey = ""
     @State private var isTestingOpenAI = false
@@ -459,7 +464,7 @@ struct SettingsView: View {
     @State private var openAIStatusIsError = false
     @State private var platformPendingDisconnect: StorePlatform?
 
-    var body: some View {
+    public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 SectionTitle("Connections", subtitle: "Manage access to your developer accounts.")
@@ -718,7 +723,7 @@ private struct StoreCredentialSetupGuide: View {
                     detail: "Copy the Issuer ID and Key ID, then download the .p8 private key. Apple allows that private key to be downloaded only once."
                 ),
                 CredentialSetupStep(
-                    title: "Connect Gouvernail",
+                    title: "Connect Escale",
                     detail: "Enter the Issuer ID and Key ID above, choose the matching .p8 file, then click Connect."
                 )
             ]
@@ -744,13 +749,13 @@ private struct StoreCredentialSetupGuide: View {
                 ),
                 CredentialSetupStep(
                     title: "Invite it to Play Console",
-                    detail: "Open Users and permissions, invite the service-account email found in the JSON file, and grant it access to the apps Gouvernail should manage.",
+                    detail: "Open Users and permissions, invite the service-account email found in the JSON file, and grant it access to the apps Escale should manage.",
                     linkTitle: "Open Play users and permissions",
                     url: URL(string: "https://play.google.com/console/users-and-permissions")
                 ),
                 CredentialSetupStep(
                     title: "Grant the feature permissions you need",
-                    detail: "Include app-information access plus store-presence editing, releases, review replies, and product/subscription permissions when you want Gouvernail to manage those areas. Missing feature permissions produce Google 403 errors.",
+                    detail: "Include app-information access plus store-presence editing, releases, review replies, and product/subscription permissions when you want Escale to manage those areas. Missing feature permissions produce Google 403 errors.",
                     linkTitle: "Review Google’s permission reference",
                     url: URL(string: "https://support.google.com/googleplay/android-developer/answer/9844686")
                 ),

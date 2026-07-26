@@ -2,18 +2,18 @@
 set -euo pipefail
 
 PROJECT_ROOT="${0:A:h:h}"
-APP_BUNDLE="$PROJECT_ROOT/dist/Gouvernail.app"
+APP_BUNDLE="$PROJECT_ROOT/dist/Escale.app"
 CONTENTS="$APP_BUNDLE/Contents"
 ICONSET="$(mktemp -d)/AppIcon.iconset"
-BUILD_CONFIGURATION="${GOUVERNAIL_BUILD_CONFIGURATION:-release}"
+BUILD_CONFIGURATION="${ESCALE_BUILD_CONFIGURATION:-release}"
 
 mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources" "$ICONSET"
 
 swift build --package-path "$PROJECT_ROOT" -c "$BUILD_CONFIGURATION"
-cp "$PROJECT_ROOT/.build/$BUILD_CONFIGURATION/Gouvernail" "$CONTENTS/MacOS/Gouvernail"
+cp "$PROJECT_ROOT/.build/$BUILD_CONFIGURATION/Escale" "$CONTENTS/MacOS/Escale"
 cp "$PROJECT_ROOT/Support/Info.plist" "$CONTENTS/Info.plist"
 
-RESOURCE_BUNDLE="$PROJECT_ROOT/.build/$BUILD_CONFIGURATION/Gouvernail_Gouvernail.bundle"
+RESOURCE_BUNDLE="$PROJECT_ROOT/.build/$BUILD_CONFIGURATION/Escale_EscaleCommunityApp.bundle"
 if [[ -d "$RESOURCE_BUNDLE" ]]; then
   cp -R "$RESOURCE_BUNDLE" "$CONTENTS/Resources/"
 fi
@@ -30,7 +30,7 @@ done
 
 iconutil -c icns "$ICONSET" -o "$CONTENTS/Resources/AppIcon.icns"
 
-SIGNING_IDENTITY="${GOUVERNAIL_CODESIGN_IDENTITY:-}"
+SIGNING_IDENTITY="${ESCALE_CODESIGN_IDENTITY:-}"
 if [[ -n "$SIGNING_IDENTITY" ]]; then
   codesign --force --deep --sign "$SIGNING_IDENTITY" "$APP_BUNDLE"
   codesign --verify --deep --strict --verbose=2 "$APP_BUNDLE"

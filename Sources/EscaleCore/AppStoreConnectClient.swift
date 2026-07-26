@@ -1,44 +1,44 @@
 import Foundation
 
-enum StoreDataSection: Hashable, Sendable {
+public enum StoreDataSection: Hashable, Sendable {
     case localizations
     case screenshots
     case products
     case reviews
 }
 
-struct StoreFetchProgress: Sendable {
-    var completed: Int
-    var total: Int
-    var detail: String
+public struct StoreFetchProgress: Sendable {
+    public var completed: Int
+    public var total: Int
+    public var detail: String
 
-    var fraction: Double {
+    public var fraction: Double {
         guard total > 0 else { return 0 }
         return min(1, max(0, Double(completed) / Double(total)))
     }
 }
 
-typealias StoreFetchProgressHandler = @MainActor @Sendable (StoreFetchProgress) -> Void
+public typealias StoreFetchProgressHandler = @MainActor @Sendable (StoreFetchProgress) -> Void
 
-struct StoreSnapshot: Sendable {
-    var app: StoreApp
-    var localizations: [ListingLocalization]
-    var screenshots: [StoreScreenshot]
-    var products: [StoreProduct]
-    var reviews: [CustomerReview]
-    var warnings: [String] = []
-    var unavailableSections: Set<StoreDataSection> = []
+public struct StoreSnapshot: Sendable {
+    public var app: StoreApp
+    public var localizations: [ListingLocalization]
+    public var screenshots: [StoreScreenshot]
+    public var products: [StoreProduct]
+    public var reviews: [CustomerReview]
+    public var warnings: [String] = []
+    public var unavailableSections: Set<StoreDataSection> = []
 }
 
-struct AppStoreVersionDraft: Sendable {
-    var app: StoreApp
-    var localizations: [ListingLocalization]
-    var screenshots: [StoreScreenshot]
+public struct AppStoreVersionDraft: Sendable {
+    public var app: StoreApp
+    public var localizations: [ListingLocalization]
+    public var screenshots: [StoreScreenshot]
 }
 
-struct ApplePriceCalculation: Sendable {
-    let resolvedBasePrice: Double
-    let regions: [PriceRegion]
+public struct ApplePriceCalculation: Sendable {
+    public let resolvedBasePrice: Double
+    public let regions: [PriceRegion]
 }
 
 private struct JSONObject: @unchecked Sendable {
@@ -56,24 +56,24 @@ private struct ITunesSoftwareResult: Decodable, Sendable {
     var artworkUrl100: String?
 }
 
-struct SubscriptionPriceCandidate: Sendable {
-    let pricePointID: String
-    let startDate: Date?
-    let preserved: Bool
-    let planType: String?
+public struct SubscriptionPriceCandidate: Sendable {
+    public let pricePointID: String
+    public let startDate: Date?
+    public let preserved: Bool
+    public let planType: String?
 }
 
-struct AppleSubscriptionPriceChangePlan: Equatable, Sendable {
-    let startDate: String
-    let preserveCurrentPrice: Bool
+public struct AppleSubscriptionPriceChangePlan: Equatable, Sendable {
+    public let startDate: String
+    public let preserveCurrentPrice: Bool
 }
 
-struct AppInfoCandidate: Equatable, Sendable {
-    let id: String
-    let state: String
+public struct AppInfoCandidate: Equatable, Sendable {
+    public let id: String
+    public let state: String
 }
 
-func preferredAppInfoID(
+public func preferredAppInfoID(
     from candidates: [AppInfoCandidate],
     editableStates: Set<String>
 ) -> String? {
@@ -82,7 +82,7 @@ func preferredAppInfoID(
         ?? candidates.first?.id
 }
 
-func changedAppInfoLocalizationAttributes(
+public func changedAppInfoLocalizationAttributes(
     title: String,
     subtitle: String,
     remoteTitle: String,
@@ -94,7 +94,7 @@ func changedAppInfoLocalizationAttributes(
     return attributes
 }
 
-func appleSubscriptionPriceChangeStartDate(now: Date = Date()) -> String {
+public func appleSubscriptionPriceChangeStartDate(now: Date = Date()) -> String {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(secondsFromGMT: 0)!
     let effectiveDate = calendar.date(byAdding: .day, value: 2, to: now) ?? now
@@ -102,7 +102,7 @@ func appleSubscriptionPriceChangeStartDate(now: Date = Date()) -> String {
     return String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
 }
 
-func appleSubscriptionPriceChangePlan(
+public func appleSubscriptionPriceChangePlan(
     currentPrice: Double,
     resolvedPrice: Double,
     policy: SubscriberPricePolicy,
@@ -117,7 +117,7 @@ func appleSubscriptionPriceChangePlan(
     )
 }
 
-func effectiveSubscriptionPriceCandidate(_ candidates: [SubscriptionPriceCandidate], on date: Date) -> SubscriptionPriceCandidate? {
+public func effectiveSubscriptionPriceCandidate(_ candidates: [SubscriptionPriceCandidate], on date: Date) -> SubscriptionPriceCandidate? {
     let today = Calendar(identifier: .gregorian).startOfDay(for: date)
     let effective = candidates.filter { $0.startDate == nil || $0.startDate! <= today }
     guard !effective.isEmpty else { return nil }
@@ -131,15 +131,15 @@ func effectiveSubscriptionPriceCandidate(_ candidates: [SubscriptionPriceCandida
         ?? planCandidates.max { ($0.startDate ?? .distantPast) < ($1.startDate ?? .distantPast) }
 }
 
-struct AppStoreConnectClient: Sendable {
+public struct AppStoreConnectClient: Sendable {
     private let credentials: AppleCredentials
     private let baseURL = URL(string: "https://api.appstoreconnect.apple.com")!
 
-    init(credentials: AppleCredentials) {
+    public init(credentials: AppleCredentials) {
         self.credentials = credentials
     }
 
-    func listApps() async throws -> [StoreApp] {
+    public func listApps() async throws -> [StoreApp] {
         var url: URL? = baseURL.appending(path: "/v1/apps").appendingQueryItems([
             URLQueryItem(name: "limit", value: "200"),
             URLQueryItem(name: "fields[apps]", value: "name,bundleId,sku,primaryLocale")
@@ -173,7 +173,7 @@ struct AppStoreConnectClient: Sendable {
         return apps
     }
 
-    func fetchSnapshot(for importedApp: StoreApp, progress: StoreFetchProgressHandler? = nil) async throws -> StoreSnapshot {
+    public func fetchSnapshot(for importedApp: StoreApp, progress: StoreFetchProgressHandler? = nil) async throws -> StoreSnapshot {
         var app = importedApp
         await progress?(StoreFetchProgress(completed: 0, total: 7, detail: "Resolving the public app icon…"))
         if app.primaryLocale == nil {
@@ -276,11 +276,11 @@ struct AppStoreConnectClient: Sendable {
         )
     }
 
-    func saveLocalization(_ localization: ListingLocalization, app: StoreApp) async throws -> ListingLocalization {
+    public func saveLocalization(_ localization: ListingLocalization, app: StoreApp) async throws -> ListingLocalization {
         var updated = localization
         guard let versionID = app.versionID else { throw APIError.unsupported("No editable App Store version is available for this app.") }
         guard app.hasEditableMetadataVersion else {
-            throw APIError.unsupported("Create or select an editable App Store version before changing version metadata. Gouvernail never submits versions for review.")
+            throw APIError.unsupported("Create or select an editable App Store version before changing version metadata. Escale never submits versions for review.")
         }
 
         let versionAttributes: [String: Any] = [
@@ -333,7 +333,7 @@ struct AppStoreConnectClient: Sendable {
         return updated
     }
 
-    func createVersion(for importedApp: StoreApp, versionString: String) async throws -> AppStoreVersionDraft {
+    public func createVersion(for importedApp: StoreApp, versionString: String) async throws -> AppStoreVersionDraft {
         let cleanVersion = versionString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanVersion.isEmpty else { throw APIError.invalidCredentials("Enter a version number, for example 2.4.0.") }
         let versions = try await versionResources(appID: importedApp.storeID)
@@ -396,7 +396,7 @@ struct AppStoreConnectClient: Sendable {
         return AppStoreVersionDraft(app: app, localizations: draftLocalizations, screenshots: screenshots)
     }
 
-    func reply(to review: CustomerReview, text: String) async throws -> String {
+    public func reply(to review: CustomerReview, text: String) async throws -> String {
         guard let reviewID = review.remoteID else { throw APIError.invalidResponse }
         if let responseID = review.responseRemoteID {
             _ = try await jsonAPI(
@@ -418,7 +418,7 @@ struct AppStoreConnectClient: Sendable {
         return id
     }
 
-    func uploadScreenshot(
+    public func uploadScreenshot(
         data: Data,
         fileName: String,
         localization: ListingLocalization,
@@ -472,11 +472,11 @@ struct AppStoreConnectClient: Sendable {
         )
     }
 
-    func deleteScreenshot(remoteID: String) async throws {
+    public func deleteScreenshot(remoteID: String) async throws {
         _ = try await request(path: "/v1/appScreenshots/\(remoteID)", method: "DELETE")
     }
 
-    func applyRegionalPrices(
+    public func applyRegionalPrices(
         product: StoreProduct,
         progress: PricingApplyProgressHandler? = nil
     ) async throws {
@@ -490,7 +490,7 @@ struct AppStoreConnectClient: Sendable {
         }
     }
 
-    func calculateRegionalPrices(product: StoreProduct, factors: [String: Double]) async throws -> ApplePriceCalculation {
+    public func calculateRegionalPrices(product: StoreProduct, factors: [String: Double]) async throws -> ApplePriceCalculation {
         guard let productID = product.appleProductID else { throw APIError.unsupported("This product is not linked to App Store Connect.") }
         let existing = Dictionary(uniqueKeysWithValues: product.regions.map { ($0.code, $0) })
         let equalizations: [(territory: String, price: Double, currency: String)]
@@ -564,7 +564,7 @@ struct AppStoreConnectClient: Sendable {
         }
         guard let preferred,
               let id = preferred.string("id") else {
-            throw APIError.unsupported("This app has no iOS App Store version yet. Create a version in Gouvernail first.")
+            throw APIError.unsupported("This app has no iOS App Store version yet. Create a version in Escale first.")
         }
         let attributes = preferred.dictionary("attributes")
         let remoteState = attributes.string("appStoreState") ?? ""
@@ -1085,7 +1085,7 @@ private extension Dictionary where Key == String, Value == Any {
     }
 }
 
-func parseISODate(_ value: String?) -> Date? {
+public func parseISODate(_ value: String?) -> Date? {
     guard let value else { return nil }
     let withFraction = ISO8601DateFormatter()
     withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -1103,7 +1103,7 @@ private func parseApplePriceDate(_ value: String?) -> Date? {
     return formatter.date(from: value)
 }
 
-func appleCalculatedPriceRegions(
+public func appleCalculatedPriceRegions(
     resolvedBasePrice: Double,
     currentBasePrice: Double,
     equalizations: [(territory: String, price: Double, currency: String)],
@@ -1137,7 +1137,7 @@ func appleCalculatedPriceRegions(
     return regions.sorted { $0.country < $1.country }
 }
 
-func appleTerritoryIdentifiers(
+public func appleTerritoryIdentifiers(
     equalizations: [(territory: String, price: Double, currency: String)],
     includesUSBase: Bool
 ) -> [String: String] {
@@ -1150,7 +1150,7 @@ func appleTerritoryIdentifiers(
     return result
 }
 
-func defaultPriceRegions(basePrice: Double) -> [PriceRegion] {
+public func defaultPriceRegions(basePrice: Double) -> [PriceRegion] {
     let data: [(String, String, String, String, Double)] = [
         ("US", "United States", "🇺🇸", "USD", 1), ("GB", "United Kingdom", "🇬🇧", "GBP", 0.86),
         ("DE", "Germany", "🇩🇪", "EUR", 0.91), ("BR", "Brazil", "🇧🇷", "BRL", 0.43),

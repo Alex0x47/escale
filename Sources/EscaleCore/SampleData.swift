@@ -1,10 +1,10 @@
 import Foundation
 
-enum SampleData {
-    static let appID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
-    static let secondAppID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+public enum SampleData {
+    public static let appID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+    public static let secondAppID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
 
-    static func workspace() -> Workspace {
+    public static func workspace() -> Workspace {
         let app = UnifiedApp(
             id: appID,
             name: "Northstar Journal",
@@ -53,7 +53,7 @@ enum SampleData {
         )
     }
 
-    static func localizations() -> [ListingLocalization] {
+    public static func localizations() -> [ListingLocalization] {
         [
             ListingLocalization(
                 id: UUID(), locale: "en-US", language: "English (US)", title: "Northstar Journal",
@@ -86,7 +86,7 @@ enum SampleData {
         ]
     }
 
-    static func screenshots() -> [StoreScreenshot] {
+    public static func screenshots() -> [StoreScreenshot] {
         let data: [(StorePlatform, String, String, String, UInt, UInt)] = [
             (.appStore, "iPhone 6.9\"", "Make space for what matters", "A calmer daily journal", 0x6657D9, 0x9A8CFA),
             (.appStore, "iPhone 6.9\"", "See your week clearly", "Gentle patterns, not pressure", 0x285B8F, 0x59A7C9),
@@ -98,7 +98,7 @@ enum SampleData {
         }
     }
 
-    static func products() -> [StoreProduct] {
+    public static func products() -> [StoreProduct] {
         let regionData: [(String, String, String, String, Double)] = [
             ("US", "United States", "🇺🇸", "USD", 1.00),
             ("GB", "United Kingdom", "🇬🇧", "GBP", 0.86),
@@ -122,7 +122,7 @@ enum SampleData {
         ]
     }
 
-    static func reviews() -> [CustomerReview] {
+    public static func reviews() -> [CustomerReview] {
         [
             CustomerReview(id: UUID(), platform: .appStore, author: "Mia R.", countryCode: "US", rating: 5, title: "Finally a journal I keep using", body: "The weekly reflection is thoughtful without being overwhelming. The new sync feels instant too.", date: Date().addingTimeInterval(-7_200), version: "2.4.0", response: nil, remoteID: nil, responseRemoteID: nil),
             CustomerReview(id: UUID(), platform: .playStore, author: "Jonas", countryCode: "DE", rating: 4, title: "Beautiful and focused", body: "Very clean experience. I would love a homescreen widget for my daily prompt.", date: Date().addingTimeInterval(-86_400), version: "2.4.0", response: nil, remoteID: nil, responseRemoteID: nil),

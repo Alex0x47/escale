@@ -56,7 +56,11 @@ public struct OnboardingView: View {
             Group {
                 switch step {
                 case 0: welcome
-                case 1: connections
+                case 1:
+                    ScrollView {
+                        connections
+                            .padding(.vertical, 8)
+                    }
                 case 2: pairing
                 default: ready
                 }
@@ -489,6 +493,7 @@ private enum CredentialFileError: LocalizedError {
 public struct SettingsView: View {
     @EnvironmentObject private var store: WorkspaceStore
     @Environment(\.escaleCommercialActions) private var commercialActions
+    @Environment(\.dismiss) private var dismiss
 
     public init() {}
     @State private var presentedSheet: SettingsSheet?
@@ -501,7 +506,22 @@ public struct SettingsView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                SectionTitle("Plan", subtitle: "See which Escale capabilities are available on this Mac.")
+                HStack(alignment: .top, spacing: 16) {
+                    SectionTitle("Plan", subtitle: "See which Escale capabilities are available on this Mac.")
+                    Spacer()
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .frame(width: 26, height: 26)
+                            .background(Color.primary.opacity(0.06), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.cancelAction)
+                    .help("Close settings")
+                    .accessibilityLabel("Close settings")
+                }
                 HStack(spacing: 13) {
                     Image(systemName: store.entitlements.plan == .pro ? "crown.fill" : "person.crop.circle")
                         .foregroundStyle(.white)

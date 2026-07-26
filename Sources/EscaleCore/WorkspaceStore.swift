@@ -23,8 +23,10 @@ public final class WorkspaceStore: ObservableObject {
     @Published public private(set) var isOpenAIKeyConfigured = false
     @Published public private(set) var calculatingProductIDs: Set<UUID> = []
     @Published public private(set) var pricingApplyProgressByProductID: [UUID: PricingApplyProgress] = [:]
+    @Published public private(set) var isAnalyticsEnabled: Bool
 
     public let entitlements: any EscaleEntitlementProviding
+    public let analytics: any EscaleAnalyticsProviding
 
     private let persistenceKey = "escale.workspace.v2"
     private let onboardingKey = "escale.onboarding.complete.v2"
@@ -36,8 +38,13 @@ public final class WorkspaceStore: ObservableObject {
     private let legacySelectedAppKey = "gouvernail.selected-app.v1"
     private let legacyDefaultsDomain = "app.gouvernail.mac"
 
-    public init(entitlements: any EscaleEntitlementProviding = CommunityEntitlements()) {
+    public init(
+        entitlements: any EscaleEntitlementProviding = CommunityEntitlements(),
+        analytics: any EscaleAnalyticsProviding = NoOpEscaleAnalytics()
+    ) {
         self.entitlements = entitlements
+        self.analytics = analytics
+        isAnalyticsEnabled = analytics.isEnabled
         let defaults = UserDefaults.standard
         let legacyDomain = defaults.persistentDomain(forName: legacyDefaultsDomain) ?? [:]
         let persistedWorkspace = defaults.data(forKey: persistenceKey)
@@ -91,6 +98,7 @@ public final class WorkspaceStore: ObservableObject {
     @discardableResult
     public func requireAccess(to feature: EscaleFeature) -> Bool {
         guard hasAccess(to: feature) else {
+            track(.proGateViewed(feature: feature))
             showToast(
                 "Escale Pro required",
                 detail: feature.upgradeDescription,
@@ -99,6 +107,23 @@ public final class WorkspaceStore: ObservableObject {
             return false
         }
         return true
+    }
+
+    public var isAnalyticsAvailable: Bool {
+        analytics.isAvailable
+    }
+
+    public var analyticsServiceName: String {
+        analytics.serviceName
+    }
+
+    public func setAnalyticsEnabled(_ enabled: Bool) {
+        analytics.setEnabled(enabled)
+        isAnalyticsEnabled = enabled && analytics.isAvailable
+    }
+
+    public func track(_ event: EscaleAnalyticsEvent) {
+        analytics.capture(event, plan: entitlements.plan)
     }
 
     private static func migratedBoolean(
@@ -168,6 +193,14 @@ public final class WorkspaceStore: ObservableObject {
         UserDefaults.standard.set(true, forKey: onboardingKey)
         withAnimation(.spring(response: 0.45, dampingFraction: 0.9)) { isOnboardingPresented = false }
         showToast("Workspace ready", detail: isDemoMode ? "Demo workspace loaded." : "Connected stores are ready to sync.", kind: .success)
+        track(.onboardingCompleted(
+            connectedStoresBucket: EscaleAnalyticsEvent.countBucket(
+                workspace.connections.filter { $0.state == .connected }.count
+            ),
+            linkedAppsBucket: EscaleAnalyticsEvent.countBucket(
+                workspace.apps.filter { $0.linkedCount == 2 }.count
+            )
+        ))
     }
 
     public func startDemoMode() {
@@ -176,6 +209,7 @@ public final class WorkspaceStore: ObservableObject {
         workspace = SampleData.workspace()
         selectedAppID = workspace.apps.first?.id
         persist()
+        track(.demoModeStarted)
         completeOnboarding()
     }
 
@@ -214,6 +248,12 @@ public final class WorkspaceStore: ObservableObject {
             ? "Imported \(apps.count) apps and loaded live data for the selected app."
             : "Imported \(apps.count) apps. Some selected-app data needs attention."
         showToast("App Store connected", detail: detail, kind: .success)
+        track(.storeConnectionCompleted(
+            platform: .appStore,
+            result: .success,
+            appCountBucket: EscaleAnalyticsEvent.countBucket(apps.count),
+            failure: nil
+        ))
     }
 
     public func connectGoogle(serviceAccountData: Data) async throws {
@@ -231,6 +271,12 @@ public final class WorkspaceStore: ObservableObject {
         updateConnection(.playStore, name: credentials.projectID ?? "Google Play", detail: credentials.clientEmail)
         persist()
         showToast("Google credentials verified", detail: "Add a package name to verify Play Console access.", kind: .success)
+        track(.storeConnectionCompleted(
+            platform: .playStore,
+            result: .success,
+            appCountBucket: nil,
+            failure: nil
+        ))
     }
 
     public func disconnect(_ platform: StorePlatform) throws {
@@ -326,6 +372,7 @@ public final class WorkspaceStore: ObservableObject {
         markConnectionSynced(.playStore)
         persist()
         showToast("Android app linked", detail: "\(clean) and its live Play data are ready in this workspace.", kind: .success)
+        track(.applicationLinked(result: .success))
     }
 
     public func link(appStoreApp sourceID: UUID, toPlayStoreApp targetID: UUID) {
@@ -343,6 +390,7 @@ public final class WorkspaceStore: ObservableObject {
             if selectedAppID == target.id { selectedAppID = sourceID }
         }
         persist()
+        track(.applicationLinked(result: .success))
     }
 
     public func localizationBinding(id: UUID) -> Binding<ListingLocalization> {
@@ -474,8 +522,22 @@ public final class WorkspaceStore: ObservableObject {
                     kind: .error
                 )
             }
+            track(.translationCompleted(
+                kind: .releaseNotes,
+                scope: targetLocale == nil ? .bulk : .single,
+                result: failures.isEmpty ? .success : (completed > 0 ? .partial : .failure),
+                targetCountBucket: EscaleAnalyticsEvent.countBucket(targets.count),
+                failure: failures.isEmpty ? nil : .remoteAPI
+            ))
         } catch {
             showToast("Translation failed", detail: error.localizedDescription, kind: .error)
+            track(.translationCompleted(
+                kind: .releaseNotes,
+                scope: targetLocale == nil ? .bulk : .single,
+                result: .failure,
+                targetCountBucket: EscaleAnalyticsEvent.countBucket(targets.count),
+                failure: EscaleAnalyticsEvent.failureCategory(for: error)
+            ))
         }
     }
 
@@ -558,8 +620,22 @@ public final class WorkspaceStore: ObservableObject {
             workspace.localizationsByApp[appID]?[targetIndex] = updated
             persist()
             showToast("Translation ready", detail: "Review the copy before publishing it to the stores.", kind: .success)
+            track(.translationCompleted(
+                kind: .listing,
+                scope: .single,
+                result: .success,
+                targetCountBucket: "1",
+                failure: nil
+            ))
         } catch {
             showToast("Translation failed", detail: error.localizedDescription, kind: .error)
+            track(.translationCompleted(
+                kind: .listing,
+                scope: .single,
+                result: .failure,
+                targetCountBucket: "1",
+                failure: EscaleAnalyticsEvent.failureCategory(for: error)
+            ))
         }
     }
 
@@ -668,8 +744,22 @@ public final class WorkspaceStore: ObservableObject {
                     kind: .error
                 )
             }
+            track(.translationCompleted(
+                kind: .field,
+                scope: announcesAllLocales ? .bulk : .single,
+                result: failures.isEmpty ? .success : (translatedCount > 0 ? .partial : .failure),
+                targetCountBucket: EscaleAnalyticsEvent.countBucket(targets.count),
+                failure: failures.isEmpty ? nil : .remoteAPI
+            ))
         } catch {
             showToast("Translation failed", detail: error.localizedDescription, kind: .error)
+            track(.translationCompleted(
+                kind: .field,
+                scope: announcesAllLocales ? .bulk : .single,
+                result: .failure,
+                targetCountBucket: EscaleAnalyticsEvent.countBucket(targets.count),
+                failure: EscaleAnalyticsEvent.failureCategory(for: error)
+            ))
         }
     }
 
@@ -772,11 +862,21 @@ public final class WorkspaceStore: ObservableObject {
                 ),
                 kind: .success
             )
+            track(.listingSaveCompleted(
+                scope: EscaleAnalyticsEvent.scope(for: completed),
+                result: .success,
+                failure: nil
+            ))
         } catch {
             localization.dirtyPlatforms.subtract(completed)
             workspace.localizationsByApp[appID]?[index] = localization
             persist()
             showError(error)
+            track(.listingSaveCompleted(
+                scope: EscaleAnalyticsEvent.scope(for: targets),
+                result: completed.isEmpty ? .failure : .partial,
+                failure: EscaleAnalyticsEvent.failureCategory(for: error)
+            ))
         }
     }
 
@@ -843,7 +943,23 @@ public final class WorkspaceStore: ObservableObject {
             }
             persist()
             showToast("Screenshot uploaded", detail: "The selected stores accepted the asset.", kind: .success)
-        } catch { showError(error) }
+            track(.screenshotOperationCompleted(
+                operation: .upload,
+                scope: EscaleAnalyticsEvent.scope(for: targets),
+                result: .success,
+                failure: nil
+            ))
+        } catch {
+            showError(error)
+            track(.screenshotOperationCompleted(
+                operation: .upload,
+                scope: EscaleAnalyticsEvent.scope(
+                    for: platformFilter.platforms.intersection(availablePlatforms(for: appID))
+                ),
+                result: .failure,
+                failure: EscaleAnalyticsEvent.failureCategory(for: error)
+            ))
+        }
     }
 
     public func deleteScreenshot(_ id: UUID) {
@@ -852,6 +968,12 @@ public final class WorkspaceStore: ObservableObject {
         if isDemoMode || screenshot.remoteID == nil {
             workspace.screenshotsByApp[appID]?.removeAll(where: { $0.id == id })
             persist()
+            track(.screenshotOperationCompleted(
+                operation: .delete,
+                scope: screenshot.platform == .appStore ? .apple : .google,
+                result: .success,
+                failure: nil
+            ))
             return
         }
         Task {
@@ -867,7 +989,21 @@ public final class WorkspaceStore: ObservableObject {
                 workspace.screenshotsByApp[appID]?.removeAll(where: { $0.id == id })
                 persist()
                 showToast("Screenshot deleted", detail: "The remote store was updated.", kind: .success)
-            } catch { showError(error) }
+                track(.screenshotOperationCompleted(
+                    operation: .delete,
+                    scope: screenshot.platform == .appStore ? .apple : .google,
+                    result: .success,
+                    failure: nil
+                ))
+            } catch {
+                showError(error)
+                track(.screenshotOperationCompleted(
+                    operation: .delete,
+                    scope: screenshot.platform == .appStore ? .apple : .google,
+                    result: .failure,
+                    failure: EscaleAnalyticsEvent.failureCategory(for: error)
+                ))
+            }
         }
     }
 
@@ -943,7 +1079,21 @@ public final class WorkspaceStore: ObservableObject {
             workspace.productsByApp[appID]?[productIndex] = product
             persist()
             showToast("Pricing calculated", detail: "Prepared \(product.regions.count) available markets. Review them before applying.", kind: .success)
-        } catch { showError(error) }
+            track(.pricingPreviewCompleted(
+                index: product.effectivePricingIndex,
+                result: .success,
+                marketCountBucket: EscaleAnalyticsEvent.countBucket(product.regions.count),
+                failure: nil
+            ))
+        } catch {
+            showError(error)
+            track(.pricingPreviewCompleted(
+                index: product.effectivePricingIndex,
+                result: .failure,
+                marketCountBucket: "0",
+                failure: EscaleAnalyticsEvent.failureCategory(for: error)
+            ))
+        }
     }
 
     public func applyPPP(productID: UUID) async {
@@ -971,6 +1121,11 @@ public final class WorkspaceStore: ObservableObject {
             }
             persist()
             showToast("Prices scheduled", detail: "Demo prices updated locally.", kind: .success)
+            track(.pricingApplyCompleted(
+                scope: EscaleAnalyticsEvent.scope(for: product.platforms),
+                result: .success,
+                failure: nil
+            ))
             return
         }
 
@@ -1007,11 +1162,26 @@ public final class WorkspaceStore: ObservableObject {
                 ? "App Store changes were scheduled two days ahead. Increases preserve existing prices when selected; Apple automatically passes decreases to existing subscribers."
                 : "The connected stores accepted the regional catalog."
             showToast(schedulesAppleSubscription ? "Prices scheduled" : "Prices applied", detail: detail, kind: .success)
+            track(.pricingApplyCompleted(
+                scope: EscaleAnalyticsEvent.scope(for: product.platforms),
+                result: .success,
+                failure: nil
+            ))
         } else if !completed.isEmpty {
             let names = completed.map(\.rawValue).sorted().joined(separator: " and ")
             showToast("Pricing partially applied", detail: names + " succeeded. " + failures.joined(separator: " · "), kind: .error)
+            track(.pricingApplyCompleted(
+                scope: EscaleAnalyticsEvent.scope(for: product.platforms),
+                result: .partial,
+                failure: .remoteAPI
+            ))
         } else {
             showToast("Pricing was not applied", detail: failures.joined(separator: " · "), kind: .error)
+            track(.pricingApplyCompleted(
+                scope: EscaleAnalyticsEvent.scope(for: product.platforms),
+                result: .failure,
+                failure: .remoteAPI
+            ))
         }
     }
 
@@ -1045,21 +1215,35 @@ public final class WorkspaceStore: ObservableObject {
             workspace.reviewsByApp[appID]?[index] = review
             persist()
             showToast("Reply sent", detail: "The store accepted your response.", kind: .success)
-        } catch { showError(error) }
+            track(.reviewReplyCompleted(platform: review.platform, result: .success, failure: nil))
+        } catch {
+            track(.reviewReplyCompleted(
+                platform: review.platform,
+                result: .failure,
+                failure: EscaleAnalyticsEvent.failureCategory(for: error)
+            ))
+            showError(error)
+        }
     }
 
     public func sync() async {
         guard !isSyncing else { return }
         isSyncing = true
         defer { isSyncing = false }
+        let connectedPlatforms = Set(workspace.connections.map(\.platform))
+        let analyticsScope = connectedPlatforms.isEmpty
+            ? EscaleAnalyticsScope.both
+            : EscaleAnalyticsEvent.scope(for: connectedPlatforms)
         if isDemoMode {
             try? await Task.sleep(for: .milliseconds(500))
             updateSyncDates()
             showToast("Demo refreshed", detail: "No remote stores were contacted.", kind: .success)
+            track(.manualSyncCompleted(scope: analyticsScope, result: .success, failure: nil))
             return
         }
         showToast("Syncing stores…", detail: "Fetching live listings, products, screenshots, and reviews.", kind: .progress)
         var failures: [String] = []
+        var firstFailureCategory: EscaleAnalyticsFailureCategory?
         do {
             if let credentials = try CredentialStore.apple() {
                 let client = AppStoreConnectClient(credentials: credentials)
@@ -1074,24 +1258,45 @@ public final class WorkspaceStore: ObservableObject {
                             appSyncIssues[id] = snapshot.warnings.map { "App Store: \($0)" }
                         }
                     }
-                    catch { failures.append("\(app.name): \(error.localizedDescription)") }
+                    catch {
+                        firstFailureCategory = firstFailureCategory ?? EscaleAnalyticsEvent.failureCategory(for: error)
+                        failures.append("\(app.name): \(error.localizedDescription)")
+                    }
                 }
             }
-        } catch { failures.append("App Store: \(error.localizedDescription)") }
+        } catch {
+            firstFailureCategory = firstFailureCategory ?? EscaleAnalyticsEvent.failureCategory(for: error)
+            failures.append("App Store: \(error.localizedDescription)")
+        }
         do {
             if let credentials = try CredentialStore.google() {
                 let client = GooglePlayClient(credentials: credentials)
                 let packages = workspace.apps.compactMap { $0.playStoreApp?.bundleID }
                 for package in packages {
                     do { merge(try await client.fetchSnapshot(packageName: package)) }
-                    catch { failures.append("\(package): \(error.localizedDescription)") }
+                    catch {
+                        firstFailureCategory = firstFailureCategory ?? EscaleAnalyticsEvent.failureCategory(for: error)
+                        failures.append("\(package): \(error.localizedDescription)")
+                    }
                 }
             }
-        } catch { failures.append("Google Play: \(error.localizedDescription)") }
+        } catch {
+            firstFailureCategory = firstFailureCategory ?? EscaleAnalyticsEvent.failureCategory(for: error)
+            failures.append("Google Play: \(error.localizedDescription)")
+        }
         updateSyncDates()
         persist()
-        if failures.isEmpty { showToast("Sync complete", detail: "Live store data is current.", kind: .success) }
-        else { showToast("Sync completed with issues", detail: failures.prefix(2).joined(separator: " · "), kind: .error) }
+        if failures.isEmpty {
+            showToast("Sync complete", detail: "Live store data is current.", kind: .success)
+            track(.manualSyncCompleted(scope: analyticsScope, result: .success, failure: nil))
+        } else {
+            showToast("Sync completed with issues", detail: failures.prefix(2).joined(separator: " · "), kind: .error)
+            track(.manualSyncCompleted(
+                scope: analyticsScope,
+                result: .partial,
+                failure: firstFailureCategory ?? .unknown
+            ))
+        }
     }
 
     public func refreshSelectedApp() async {
@@ -1161,6 +1366,17 @@ public final class WorkspaceStore: ObservableObject {
         if successfulStores > 0 { loadedAppIDs.insert(id) }
         appSyncIssues[id] = issues
         persist()
+        let result: EscaleAnalyticsResult = if successfulStores == 0 {
+            .failure
+        } else if issues.isEmpty {
+            .success
+        } else {
+            .partial
+        }
+        track(.appRefreshCompleted(
+            scope: EscaleAnalyticsEvent.scope(for: availablePlatforms(for: id)),
+            result: result
+        ))
 
         guard showFeedback else { return }
         if successfulStores == 0 {

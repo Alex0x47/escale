@@ -80,6 +80,7 @@ public struct OnboardingView: View {
                     .foregroundStyle(.secondary)
                 }
                 Button(step == steps.count - 1 ? "Open workspace" : "Continue") {
+                    store.track(.onboardingStepCompleted(step: step + 1))
                     if step == steps.count - 1 {
                         store.completeOnboarding()
                         dismiss()
@@ -199,7 +200,15 @@ public struct OnboardingView: View {
                                     do {
                                         try await store.connectApple(issuerID: issuerID, keyID: keyID, privateKeyPEM: applePrivateKey)
                                         appleConnected = true
-                                    } catch { store.showToast("App Store connection failed", detail: error.localizedDescription, kind: .error) }
+                                    } catch {
+                                        store.track(.storeConnectionCompleted(
+                                            platform: .appStore,
+                                            result: .failure,
+                                            appCountBucket: nil,
+                                            failure: EscaleAnalyticsEvent.failureCategory(for: error)
+                                        ))
+                                        store.showToast("App Store connection failed", detail: error.localizedDescription, kind: .error)
+                                    }
                                     isConnectingApple = false
                                 }
                             } label: {
@@ -222,7 +231,15 @@ public struct OnboardingView: View {
                                 do {
                                     try await store.connectGoogle(serviceAccountData: googleServiceAccountData)
                                     googleConnected = true
-                                } catch { store.showToast("Google Play connection failed", detail: error.localizedDescription, kind: .error) }
+                                } catch {
+                                    store.track(.storeConnectionCompleted(
+                                        platform: .playStore,
+                                        result: .failure,
+                                        appCountBucket: nil,
+                                        failure: EscaleAnalyticsEvent.failureCategory(for: error)
+                                    ))
+                                    store.showToast("Google Play connection failed", detail: error.localizedDescription, kind: .error)
+                                }
                                 isConnectingGoogle = false
                             }
                         } label: {
@@ -330,6 +347,22 @@ public struct OnboardingView: View {
                 readyItem(icon: "quote.bubble", title: "Stay close", detail: "Reply to reviews")
             }
             .frame(maxWidth: 650)
+            if store.isAnalyticsAvailable {
+                Toggle(
+                    "Share anonymous usage analytics",
+                    isOn: Binding(
+                        get: { store.isAnalyticsEnabled },
+                        set: { store.setAnalyticsEnabled($0) }
+                    )
+                )
+                .toggleStyle(.checkbox)
+                .font(.subheadline.weight(.medium))
+                Text("Helps improve Escale through coarse feature and reliability events sent to \(store.analyticsServiceName). Store content, account and app identifiers, credentials, licence keys, reviews, screenshots, prices, file paths, and raw errors are never included. You can change this in Settings.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 650)
+            }
         }
         .padding(.horizontal, 50)
     }
@@ -497,6 +530,25 @@ public struct SettingsView: View {
                 }
                 .padding(14)
                 .cardStyle(cornerRadius: 13)
+                if store.isAnalyticsAvailable {
+                    Divider()
+                    SectionTitle("Privacy", subtitle: "Control anonymous product analytics for this build.")
+                    VStack(alignment: .leading, spacing: 10) {
+                        Toggle(
+                            "Share anonymous usage analytics",
+                            isOn: Binding(
+                                get: { store.isAnalyticsEnabled },
+                                set: { store.setAnalyticsEnabled($0) }
+                            )
+                        )
+                        Text("When enabled, Escale sends coarse feature, outcome, app-version, and system-version events to \(store.analyticsServiceName). It never sends store content, account or app identifiers, credentials, licence keys, reviews, screenshots, prices, file paths, or raw error messages.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(14)
+                    .cardStyle(cornerRadius: 13)
+                }
                 Divider()
                 SectionTitle("Connections", subtitle: "Manage access to your developer accounts.")
                 ForEach(StorePlatform.allCases) { platform in

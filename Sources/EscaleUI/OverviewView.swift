@@ -400,6 +400,7 @@ private struct AndroidAppLinkView: View {
                 dismiss()
             } catch {
                 errorMessage = error.localizedDescription
+                store.track(.applicationLinked(result: .failure))
                 store.showToast("Could not link Android app", detail: error.localizedDescription, kind: .error)
             }
             isFetching = false

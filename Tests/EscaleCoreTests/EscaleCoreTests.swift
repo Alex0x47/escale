@@ -671,3 +671,44 @@ func liveOpenAIRead() async throws {
     guard let apiKey = ProcessInfo.processInfo.environment["ESCALE_OPENAI_API_KEY"] else { return }
     try await OpenAIClient(apiKey: apiKey).validateConnection()
 }
+
+@Test("Analytics events expose only bounded operational properties")
+func analyticsEventSchema() {
+    let event = EscaleAnalyticsEvent.translationCompleted(
+        kind: .listing,
+        scope: .both,
+        result: .partial,
+        targetCountBucket: EscaleAnalyticsEvent.countBucket(8),
+        failure: .network
+    )
+
+    #expect(event.name == "translation_completed")
+    #expect(event.properties == [
+        "kind": "listing",
+        "scope": "both",
+        "result": "partial",
+        "target_count_bucket": "6-10",
+        "failure_category": "network"
+    ])
+}
+
+@Test("Analytics count buckets never expose exact large counts")
+func analyticsCountBuckets() {
+    #expect(EscaleAnalyticsEvent.countBucket(0) == "0")
+    #expect(EscaleAnalyticsEvent.countBucket(1) == "1")
+    #expect(EscaleAnalyticsEvent.countBucket(4) == "3-5")
+    #expect(EscaleAnalyticsEvent.countBucket(9) == "6-10")
+    #expect(EscaleAnalyticsEvent.countBucket(5_000) == "11+")
+}
+
+@Test("Community analytics provider is unavailable and disabled")
+func communityAnalyticsIsNoOp() {
+    let analytics = NoOpEscaleAnalytics()
+
+    #expect(!analytics.isAvailable)
+    #expect(!analytics.isEnabled)
+    #expect(analytics.serviceName.isEmpty)
+    analytics.setEnabled(true)
+    analytics.capture(.appLaunched, plan: .community)
+    #expect(!analytics.isEnabled)
+}

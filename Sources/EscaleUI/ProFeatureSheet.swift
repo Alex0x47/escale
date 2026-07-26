@@ -3,6 +3,7 @@ import SwiftUI
 
 public struct ProFeatureSheet: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.escaleCommercialActions) private var commercialActions
 
     private let feature: EscaleFeature
 
@@ -53,7 +54,14 @@ public struct ProFeatureSheet: View {
                     dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
-                .buttonStyle(.borderedProminent)
+                if let commercialActions {
+                    Button("Unlock Escale Pro") {
+                        dismiss()
+                        commercialActions.openLicenceManagement()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                }
             }
         }
         .padding(28)

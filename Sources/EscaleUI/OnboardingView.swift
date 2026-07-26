@@ -455,6 +455,7 @@ private enum CredentialFileError: LocalizedError {
 
 public struct SettingsView: View {
     @EnvironmentObject private var store: WorkspaceStore
+    @Environment(\.escaleCommercialActions) private var commercialActions
 
     public init() {}
     @State private var presentedSheet: SettingsSheet?
@@ -467,6 +468,36 @@ public struct SettingsView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                SectionTitle("Plan", subtitle: "See which Escale capabilities are available on this Mac.")
+                HStack(spacing: 13) {
+                    Image(systemName: store.entitlements.plan == .pro ? "crown.fill" : "person.crop.circle")
+                        .foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                        .background(
+                            store.entitlements.plan == .pro ? Theme.accent : Color.secondary,
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        )
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(store.entitlements.plan.displayName)
+                            .font(.subheadline.weight(.semibold))
+                        Text(
+                            store.entitlements.plan == .pro
+                                ? "Pro capabilities are unlocked."
+                                : "Manual workflows and single-account tools are available."
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if let commercialActions {
+                        Button(store.entitlements.plan == .pro ? "Manage licence" : "Unlock Pro") {
+                            commercialActions.openLicenceManagement()
+                        }
+                    }
+                }
+                .padding(14)
+                .cardStyle(cornerRadius: 13)
+                Divider()
                 SectionTitle("Connections", subtitle: "Manage access to your developer accounts.")
                 ForEach(StorePlatform.allCases) { platform in
                     let connection = store.workspace.connections.first(where: { $0.platform == platform })

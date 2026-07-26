@@ -16,7 +16,9 @@ Private Escale commercial repository
 └── EscaleProApp
 ```
 
-For local development, the private package lives beside this repository at `../escale-pro`. Its bootstrap `EscaleProEntitlements` provider unlocks declared Pro capabilities for development only and must be replaced by the licence-backed provider before distribution.
+For local development, the private package lives beside this repository at
+`../escale-pro`. Its `EscaleProEntitlements` provider starts in Community mode
+and is unlocked only by the private licence manager.
 
 The private package should import the public library products:
 
@@ -45,6 +47,12 @@ If a bug exists only in a commercial feature, fix it in `EscaleProKit`. If a com
 Shared features belong in `EscaleCore` and `EscaleUI`. Commercial-only features belong in `EscaleProKit`. The public UI exposes the root view, settings, sidebar, and current feature screens so the commercial app can compose shared screens without copying them.
 
 Avoid conditional compilation such as `#if PRO` in shared files. It makes accidental feature leakage easier and leaves the community build responsible for code it cannot test. Keep edition-specific implementations in edition-specific targets and repositories.
+
+`EscaleUI` exposes an optional `EscaleCommercialActions` environment value.
+The Community executable leaves it unset. A commercial executable can use it
+to open its private purchase and licence-management UI from shared feature
+gates and Settings without placing payment or licence code in the public
+package.
 
 ## Licensing boundary
 

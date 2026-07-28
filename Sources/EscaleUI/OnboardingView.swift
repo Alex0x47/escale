@@ -764,46 +764,64 @@ private struct StoreCredentialSetupGuide: View {
     @State private var isExpanded = false
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
-            VStack(alignment: .leading, spacing: 11) {
-                ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
-                    HStack(alignment: .top, spacing: 10) {
-                        Text("\(index + 1)")
-                            .font(.caption2.weight(.bold))
-                            .foregroundStyle(.white)
-                            .frame(width: 21, height: 21)
-                            .background(platform.tint, in: Circle())
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(step.title).font(.caption.weight(.semibold))
-                            Text(step.detail)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                            if let linkTitle = step.linkTitle, let url = step.url {
-                                Link(destination: url) {
-                                    Label(linkTitle, systemImage: "arrow.up.right")
-                                        .font(.caption2.weight(.semibold))
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Label(
+                        platform == .appStore ? "How to create an Apple API key" : "How to create a Google service account",
+                        systemImage: "list.number"
+                    )
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption2.weight(.semibold))
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                }
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.accent)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 11) {
+                    ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                        HStack(alignment: .top, spacing: 10) {
+                            Text("\(index + 1)")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 21, height: 21)
+                                .background(platform.tint, in: Circle())
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(step.title).font(.caption.weight(.semibold))
+                                Text(step.detail)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if let linkTitle = step.linkTitle, let url = step.url {
+                                    Link(destination: url) {
+                                        Label(linkTitle, systemImage: "arrow.up.right")
+                                            .font(.caption2.weight(.semibold))
+                                    }
                                 }
                             }
                         }
                     }
+                    Label(
+                        "Credential files are stored in macOS Keychain and are never written into the workspace cache.",
+                        systemImage: "lock.shield.fill"
+                    )
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
                 }
-                Label(
-                    "Credential files are stored in macOS Keychain and are never written into the workspace cache.",
-                    systemImage: "lock.shield.fill"
-                )
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .padding(.top, 2)
+                .padding(.top, 10)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .padding(.top, 10)
-        } label: {
-            Label(
-                platform == .appStore ? "How to create an Apple API key" : "How to create a Google service account",
-                systemImage: "list.number"
-            )
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(Theme.accent)
         }
     }
 

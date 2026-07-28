@@ -83,7 +83,7 @@ public struct OnboardingView: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                 }
-                Button(step == steps.count - 1 ? "Open workspace" : "Continue") {
+                Button {
                     store.track(.onboardingStepCompleted(step: step + 1))
                     if step == steps.count - 1 {
                         store.completeOnboarding()
@@ -91,9 +91,19 @@ public struct OnboardingView: View {
                     } else {
                         withAnimation { step += 1 }
                     }
+                } label: {
+                    if isPairingInProgress {
+                        HStack(spacing: 7) {
+                            ProgressView().controlSize(.small)
+                            Text("Pairing…")
+                        }
+                    } else {
+                        Text(step == steps.count - 1 ? "Open workspace" : "Continue")
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .disabled(isPairingInProgress)
             }
             .padding(24)
         }
@@ -112,6 +122,10 @@ public struct OnboardingView: View {
         } message: {
             Text("Escale needs your Google service account to verify that this package exists and fetch its live Play Console data.")
         }
+    }
+
+    private var isPairingInProgress: Bool {
+        step == 2 && isAddingPackage
     }
 
     private var welcome: some View {

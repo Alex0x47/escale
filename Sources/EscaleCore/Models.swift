@@ -494,7 +494,7 @@ public func googlePlayReleaseNotes(in taggedBlock: String) -> [GooglePlayRelease
         let trimmed = line.trimmingCharacters(in: .whitespaces)
         if let locale = currentLocale {
             if trimmed == "</\(locale)>" {
-                let text = currentLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                let text = currentLines.joined(separator: "\n")
                 notes.append(GooglePlayReleaseNote(locale: locale, text: text))
                 currentLocale = nil
                 currentLines = []
@@ -526,9 +526,8 @@ public func replacingGooglePlayReleaseNote(
 ) -> String {
     var notes = googlePlayReleaseNotes(in: taggedBlock)
     notes.removeAll { canonicalStoreLocale($0.locale) == canonicalStoreLocale(locale) }
-    let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    if !cleanText.isEmpty {
-        notes.append(GooglePlayReleaseNote(locale: locale, text: cleanText))
+    if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        notes.append(GooglePlayReleaseNote(locale: locale, text: text))
     }
 
     var ordered: [GooglePlayReleaseNote] = []

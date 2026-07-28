@@ -37,6 +37,7 @@ public final class WorkspaceStore: ObservableObject {
     private let legacyDemoKey = "gouvernail.demo-mode"
     private let legacySelectedAppKey = "gouvernail.selected-app.v1"
     private let legacyDefaultsDomain = "app.gouvernail.mac"
+    private var pendingEditorPersistence: Task<Void, Never>?
 
     public init(
         entitlements: any EscaleEntitlementProviding = CommunityEntitlements(),
@@ -415,7 +416,7 @@ public final class WorkspaceStore: ObservableObject {
                 var copy = applyingListingMetadata(from: updated, to: stored, platforms: targets)
                 copy.dirtyPlatforms.formUnion(targets)
                 self.workspace.localizationsByApp[appID]?[index] = copy
-                self.persist()
+                self.scheduleEditorPersistence()
             }
         )
     }
@@ -445,7 +446,7 @@ public final class WorkspaceStore: ObservableObject {
                     self.workspace.googlePlayReleaseNotesByApp = [:]
                 }
                 self.workspace.googlePlayReleaseNotesByApp?[appID] = block
-                self.persist()
+                self.scheduleEditorPersistence()
             }
         )
     }
@@ -553,7 +554,7 @@ public final class WorkspaceStore: ObservableObject {
             workspace.googlePlayReleaseNotesByApp = [:]
         }
         workspace.googlePlayReleaseNotesByApp?[appID] = block
-        persist()
+        scheduleEditorPersistence()
     }
 
     private func googlePlayReleaseNoteLocales(appID: UUID) -> [String] {
@@ -1618,6 +1619,16 @@ public final class WorkspaceStore: ObservableObject {
 
     private func persist() {
         if let data = try? JSONEncoder().encode(workspace) { UserDefaults.standard.set(data, forKey: persistenceKey) }
+    }
+
+    private func scheduleEditorPersistence() {
+        guard pendingEditorPersistence == nil else { return }
+        pendingEditorPersistence = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled, let self else { return }
+            pendingEditorPersistence = nil
+            persist()
+        }
     }
 }
 

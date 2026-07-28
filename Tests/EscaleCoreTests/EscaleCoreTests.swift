@@ -202,6 +202,20 @@ func googlePlayReleaseNoteBlocks() {
     #expect(googlePlayReleaseNotesValidationIssues(updated).isEmpty)
 }
 
+@Test("Google Play release-note editing preserves spaces")
+func googlePlayReleaseNoteSpaces() {
+    let text = "A faster sync with better search. "
+    let updated = replacingGooglePlayReleaseNote(
+        in: "",
+        locale: "en-US",
+        text: text,
+        orderedLocales: ["en-US"]
+    )
+
+    #expect(googlePlayReleaseNote(in: updated, locale: "en-US") == text)
+    #expect(updated.contains("better search. \n</en-US>"))
+}
+
 @Test("Google Play release-note validation enforces the per-language limit")
 func googlePlayReleaseNoteLimits() {
     let oversized = "<en-US>\n\(String(repeating: "a", count: 501))\n</en-US>"

@@ -1227,6 +1227,53 @@ public final class WorkspaceStore: ObservableObject {
         }
     }
 
+    public func draftReviewReply(to reviewID: UUID) async -> String? {
+        guard let appID = selectedAppID,
+              let app = workspace.apps.first(where: { $0.id == appID }),
+              let review = workspace.reviewsByApp[appID]?.first(where: { $0.id == reviewID }) else {
+            return nil
+        }
+
+        do {
+            guard let apiKey = try CredentialStore.openAIAPIKey() else {
+                throw OpenAIClientError.missingAPIKey
+            }
+            let platform = review.platform
+            let storedLocalizations = workspace.localizationsByApp[appID, default: []]
+            let preferredLocale = platform == .appStore
+                ? app.appStoreApp?.primaryLocale
+                : app.playStoreApp?.primaryLocale
+            let primary = primaryLocalization(
+                in: storedLocalizations,
+                preferredLocale: preferredLocale
+            ).map { listingLocalization($0, displaying: [platform]) }
+            let listingSummary = primary?.description ?? ""
+            let currentReleaseNotes = primary?.releaseNotes ?? ""
+            let appName = reviewReplyAppName(for: app, platform: platform)
+
+            showToast(
+                "Drafting reply…",
+                detail: "Using \(appName) and this review as context.",
+                kind: .progress
+            )
+            let draft = try await OpenAIClient(apiKey: apiKey).draftReviewReply(
+                appName: appName,
+                review: review,
+                listingSummary: listingSummary,
+                currentReleaseNotes: currentReleaseNotes
+            )
+            showToast(
+                "Reply draft ready",
+                detail: "Review and edit the AI-generated response before publishing it.",
+                kind: .success
+            )
+            return draft
+        } catch {
+            showToast("Could not draft reply", detail: error.localizedDescription, kind: .error)
+            return nil
+        }
+    }
+
     public func sync() async {
         guard !isSyncing else { return }
         isSyncing = true

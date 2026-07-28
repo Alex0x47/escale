@@ -178,6 +178,30 @@ struct ToastView: View {
     }
 }
 
+private struct EscaleToastOverlayModifier: ViewModifier {
+    @EnvironmentObject private var store: WorkspaceStore
+    let topPadding: CGFloat
+
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .top) {
+            if let toast = store.toast {
+                ToastView(toast: toast)
+                    .padding(.horizontal, 20)
+                    .padding(.top, topPadding)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(100)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+}
+
+extension View {
+    func escaleToastOverlay(topPadding: CGFloat = 16) -> some View {
+        modifier(EscaleToastOverlayModifier(topPadding: topPadding))
+    }
+}
+
 struct MetricCard: View {
     let icon: String
     let label: String

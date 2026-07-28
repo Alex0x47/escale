@@ -7,22 +7,14 @@ public struct EscaleRootView: View {
     public init() {}
 
     public var body: some View {
-        ZStack(alignment: .top) {
-            NavigationSplitView {
-                SidebarView()
-                    .navigationSplitViewColumnWidth(min: 260, ideal: 286, max: 320)
-            } detail: {
-                MainDetailView()
-            }
-            .background(Theme.canvas)
-
-            if let toast = store.toast {
-                ToastView(toast: toast)
-                    .padding(.top, 52)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .zIndex(5)
-            }
+        NavigationSplitView {
+            SidebarView()
+                .navigationSplitViewColumnWidth(min: 260, ideal: 286, max: 320)
+        } detail: {
+            MainDetailView()
         }
+        .background(Theme.canvas)
+        .escaleToastOverlay(topPadding: 52)
         .sheet(isPresented: $store.isOnboardingPresented) {
             OnboardingView()
                 .environmentObject(store)

@@ -99,6 +99,7 @@ public struct OnboardingView: View {
         }
         .frame(width: 830, height: 650)
         .background(Theme.canvas)
+        .escaleToastOverlay()
         .onAppear {
             appleConnected = store.workspace.connections.first(where: { $0.platform == .appStore })?.state == .connected
             googleConnected = store.workspace.connections.first(where: { $0.platform == .playStore })?.state == .connected
@@ -639,6 +640,7 @@ public struct SettingsView: View {
             .padding(28)
         }
         .background(Theme.canvas)
+        .escaleToastOverlay()
         .onAppear { store.refreshOpenAIConfigurationStatus() }
         .alert(item: $platformPendingDisconnect) { platform in
             Alert(
@@ -838,6 +840,7 @@ private struct StoreConnectionSheet: View {
         }
         .frame(width: 620, height: 600)
         .background(Theme.canvas)
+        .escaleToastOverlay()
     }
 
     private var header: some View {

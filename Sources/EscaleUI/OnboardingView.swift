@@ -408,7 +408,7 @@ public struct OnboardingView: View {
 
     private func chooseApplePrivateKey() {
         let p8Type = UTType(filenameExtension: "p8") ?? .data
-        guard let url = chooseCredentialFile(
+        guard let url = CredentialFilePicker.choose(
             title: "Choose App Store Connect private key",
             message: "Select the .p8 key downloaded from App Store Connect.",
             allowedContentTypes: [p8Type]
@@ -447,7 +447,7 @@ public struct OnboardingView: View {
     }
 
     private func chooseGoogleServiceAccount() {
-        guard let url = chooseCredentialFile(
+        guard let url = CredentialFilePicker.choose(
             title: "Choose Google service account",
             message: "Select the service-account JSON downloaded from Google Cloud.",
             allowedContentTypes: [.json]
@@ -463,7 +463,11 @@ public struct OnboardingView: View {
         }
     }
 
-    private func chooseCredentialFile(title: String, message: String, allowedContentTypes: [UTType]) -> URL? {
+}
+
+@MainActor
+private enum CredentialFilePicker {
+    static func choose(title: String, message: String, allowedContentTypes: [UTType]) -> URL? {
         let panel = NSOpenPanel()
         panel.title = title
         panel.message = message
@@ -592,6 +596,12 @@ public struct SettingsView: View {
                                     platformPendingDisconnect = platform
                                 }
                                 .buttonStyle(.borderless)
+                            } else if connection?.state != .connected {
+                                Button(connection?.state == .attention ? "Reconnect" : "Connect") {
+                                    presentedSheet = .connection(platform)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
                             }
                         }
                         StoreCredentialSetupGuide(platform: platform)
@@ -654,6 +664,9 @@ public struct SettingsView: View {
                 ManualLinkView()
                     .environmentObject(store)
                     .frame(width: 560, height: 330)
+            case .connection(let platform):
+                StoreConnectionSheet(platform: platform)
+                    .environmentObject(store)
             }
         }
     }
@@ -759,11 +772,285 @@ public struct SettingsView: View {
     }
 }
 
-private enum SettingsSheet: String, Identifiable {
+private enum SettingsSheet: Identifiable {
     case setup
     case linker
+    case connection(StorePlatform)
 
-    var id: String { rawValue }
+    var id: String {
+        switch self {
+        case .setup: "setup"
+        case .linker: "linker"
+        case .connection(let platform): "connection-\(platform.id)"
+        }
+    }
+}
+
+private struct StoreConnectionSheet: View {
+    let platform: StorePlatform
+
+    @EnvironmentObject private var store: WorkspaceStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var issuerID = ""
+    @State private var keyID = ""
+    @State private var applePrivateKey = ""
+    @State private var appleKeyName = "Choose .p8 private key"
+    @State private var googleServiceAccountData: Data?
+    @State private var googleKeyName = "Choose service-account JSON"
+    @State private var isConnecting = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    SectionTitle(
+                        "Credentials",
+                        subtitle: platform == .appStore
+                            ? "Use a Team API key with App Manager access."
+                            : "Use a Google Cloud service account invited to your Play Console."
+                    )
+
+                    credentialForm
+                        .padding(18)
+                        .cardStyle(cornerRadius: 14)
+
+                    StoreCredentialSetupGuide(platform: platform)
+                        .padding(16)
+                        .cardStyle(cornerRadius: 14)
+
+                    if let errorMessage {
+                        Label(errorMessage, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+                .padding(24)
+            }
+            Divider()
+            footer
+        }
+        .frame(width: 620, height: 600)
+        .background(Theme.canvas)
+    }
+
+    private var header: some View {
+        HStack(spacing: 14) {
+            Image(systemName: platform.icon)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background(platform.tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Connect \(platform.rawValue)")
+                    .font(.title2.weight(.bold))
+                Text("Validated live, then stored securely in macOS Keychain.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .frame(width: 26, height: 26)
+                    .background(Color.primary.opacity(0.06), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
+            .help("Close connection setup")
+            .accessibilityLabel("Close connection setup")
+        }
+        .padding(22)
+    }
+
+    @ViewBuilder
+    private var credentialForm: some View {
+        switch platform {
+        case .appStore:
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Issuer ID").font(.caption.weight(.semibold))
+                        TextField("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", text: $issuerID)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Key ID").font(.caption.weight(.semibold))
+                        TextField("XXXXXXXXXX", text: $keyID)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 170)
+                    }
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Private key").font(.caption.weight(.semibold))
+                    Button {
+                        chooseApplePrivateKey()
+                    } label: {
+                        HStack {
+                            Image(systemName: applePrivateKey.isEmpty ? "key.horizontal" : "checkmark.circle.fill")
+                                .foregroundStyle(applePrivateKey.isEmpty ? Color.secondary : Color.green)
+                            Text(appleKeyName)
+                                .lineLimit(1)
+                            Spacer()
+                            Text("Choose…")
+                                .foregroundStyle(Theme.accent)
+                        }
+                        .padding(9)
+                        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        case .playStore:
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Service-account JSON").font(.caption.weight(.semibold))
+                Button {
+                    chooseGoogleServiceAccount()
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: googleServiceAccountData == nil ? "doc.badge.plus" : "checkmark.circle.fill")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(googleServiceAccountData == nil ? Color.secondary : Color.green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(googleKeyName)
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(1)
+                            Text(googleServiceAccountData == nil ? "Select the JSON key downloaded from Google Cloud." : "Ready to validate with Google Play.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text("Choose…")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Theme.accent)
+                    }
+                    .padding(12)
+                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var footer: some View {
+        HStack(spacing: 12) {
+            Label("Credentials stay on this Mac", systemImage: "lock.shield.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Button("Cancel") {
+                dismiss()
+            }
+            Button {
+                connect()
+            } label: {
+                if isConnecting {
+                    HStack(spacing: 7) {
+                        ProgressView().controlSize(.small)
+                        Text("Connecting…")
+                    }
+                    .frame(minWidth: 92)
+                } else {
+                    Text("Connect \(platform.rawValue)")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!canConnect || isConnecting)
+        }
+        .padding(20)
+    }
+
+    private var canConnect: Bool {
+        switch platform {
+        case .appStore:
+            !issuerID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !keyID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !applePrivateKey.isEmpty
+        case .playStore:
+            googleServiceAccountData != nil
+        }
+    }
+
+    private func connect() {
+        guard canConnect, !isConnecting else { return }
+        isConnecting = true
+        errorMessage = nil
+
+        Task {
+            do {
+                switch platform {
+                case .appStore:
+                    try await store.connectApple(
+                        issuerID: issuerID,
+                        keyID: keyID,
+                        privateKeyPEM: applePrivateKey
+                    )
+                case .playStore:
+                    guard let googleServiceAccountData else {
+                        throw APIError.invalidCredentials("Choose a Google service-account JSON key.")
+                    }
+                    try await store.connectGoogle(serviceAccountData: googleServiceAccountData)
+                }
+                dismiss()
+            } catch {
+                store.track(.storeConnectionCompleted(
+                    platform: platform,
+                    result: .failure,
+                    appCountBucket: nil,
+                    failure: EscaleAnalyticsEvent.failureCategory(for: error)
+                ))
+                errorMessage = error.localizedDescription
+            }
+            isConnecting = false
+        }
+    }
+
+    private func chooseApplePrivateKey() {
+        let p8Type = UTType(filenameExtension: "p8") ?? .data
+        guard let url = CredentialFilePicker.choose(
+            title: "Choose App Store Connect private key",
+            message: "Select the .p8 key downloaded from App Store Connect.",
+            allowedContentTypes: [p8Type]
+        ) else { return }
+
+        do {
+            let privateKey = try String(contentsOf: url, encoding: .utf8)
+            guard privateKey.contains("-----BEGIN PRIVATE KEY-----") else {
+                throw CredentialFileError.invalidApplePrivateKey
+            }
+            applePrivateKey = privateKey
+            appleKeyName = url.lastPathComponent
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func chooseGoogleServiceAccount() {
+        guard let url = CredentialFilePicker.choose(
+            title: "Choose Google service account",
+            message: "Select the service-account JSON downloaded from Google Cloud.",
+            allowedContentTypes: [.json]
+        ) else { return }
+
+        do {
+            let data = try Data(contentsOf: url)
+            _ = try JSONSerialization.jsonObject(with: data)
+            googleServiceAccountData = data
+            googleKeyName = url.lastPathComponent
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
 }
 
 private struct StoreCredentialSetupGuide: View {

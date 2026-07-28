@@ -6,6 +6,9 @@ public struct OverviewView: View {
 
     @EnvironmentObject private var store: WorkspaceStore
     @State private var pairingRequest: AppPairingRequest?
+    @State private var isCreatingVersion = false
+    @State private var showingNewVersion = false
+    @State private var newVersionNumber = ""
 
     private var localizationHealth: String {
         guard !store.selectedLocalizations.isEmpty else { return "—" }
@@ -86,6 +89,7 @@ public struct OverviewView: View {
             AppPairingView(appID: request.appID)
                 .environmentObject(store)
         }
+        .sheet(isPresented: $showingNewVersion) { newVersionSheet }
     }
 
     @ViewBuilder
@@ -133,6 +137,16 @@ public struct OverviewView: View {
                 .controlSize(.large)
                 .help("Pair this product with its record from the other store")
             }
+            if let apple = app.appStoreApp, !apple.hasEditableMetadataVersion {
+                Button {
+                    newVersionNumber = suggestedNextVersion(from: apple.version)
+                    showingNewVersion = true
+                } label: {
+                    Label("New iOS version", systemImage: "plus.circle")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+            }
             Button {
                 store.selectedSection = .listing
             } label: {
@@ -142,6 +156,40 @@ public struct OverviewView: View {
             .controlSize(.large)
             .disabled(store.isSelectedAppLoading && store.selectedLocalizations.isEmpty)
         }
+    }
+
+    private var newVersionSheet: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            SectionTitle("Create an iOS version", subtitle: "Creates an editable App Store Connect draft. Escale will not submit it for review.", eyebrow: "App Store Connect")
+            TextField("Version, for example 2.4.0", text: $newVersionNumber)
+                .textFieldStyle(.roundedBorder)
+            Text("The previous live version’s promotional text is loaded automatically for every matching localization.")
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                Button("Cancel") { showingNewVersion = false }.keyboardShortcut(.cancelAction)
+                Button("Create version") {
+                    isCreatingVersion = true
+                    Task {
+                        if await store.createAppStoreVersion(newVersionNumber) { showingNewVersion = false }
+                        isCreatingVersion = false
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(newVersionNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isCreatingVersion)
+            }
+        }
+        .padding(24)
+        .frame(width: 500)
+    }
+
+    private func suggestedNextVersion(from version: String) -> String {
+        var parts = version.split(separator: ".").compactMap { Int($0) }
+        guard !parts.isEmpty else { return "1.0.0" }
+        while parts.count < 3 { parts.append(0) }
+        parts[parts.count - 1] += 1
+        return parts.map(String.init).joined(separator: ".")
     }
 
     private func releasePanel(_ app: UnifiedApp) -> some View {

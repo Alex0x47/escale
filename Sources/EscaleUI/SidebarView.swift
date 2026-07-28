@@ -13,6 +13,7 @@ public struct SidebarView: View {
     @State private var isAppSelectorPresented = false
     @State private var showsOfficialDownloadPrompt = false
     @State private var pairingRequest: AppPairingRequest?
+    @State private var selectedStoreVersion: StoreApp?
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -73,8 +74,12 @@ public struct SidebarView: View {
                             .font(.caption2.weight(.bold))
                             .tracking(0.8)
                             .foregroundStyle(.secondary)
-                        if let ios = app.appStoreApp { StoreVersionRow(app: ios) }
-                        if let android = app.playStoreApp { StoreVersionRow(app: android) }
+                        if let ios = app.appStoreApp {
+                            StoreVersionRow(app: ios) { selectedStoreVersion = ios }
+                        }
+                        if let android = app.playStoreApp {
+                            StoreVersionRow(app: android) { selectedStoreVersion = android }
+                        }
                         if app.linkedCount == 1 {
                             Button {
                                 pairingRequest = AppPairingRequest(appID: app.id)
@@ -180,6 +185,10 @@ public struct SidebarView: View {
         .sheet(item: $pairingRequest) { request in
             AppPairingView(appID: request.appID)
                 .environmentObject(store)
+        }
+        .sheet(item: $selectedStoreVersion) { app in
+            StoreVersionDetailsSheet(app: app)
+                .frame(width: 680, height: 650)
         }
     }
 
@@ -426,16 +435,247 @@ private struct SectionRow: View {
 
 private struct StoreVersionRow: View {
     let app: StoreApp
+    let action: () -> Void
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: app.platform.icon).foregroundStyle(app.platform.tint).frame(width: 16)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("\(app.platform.shortName) · \(app.version)").font(.caption.weight(.semibold))
-                Text(app.state.rawValue).font(.caption2).foregroundStyle(.secondary)
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: app.platform.icon).foregroundStyle(app.platform.tint).frame(width: 16)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("\(app.platform.shortName) · \(app.version)").font(.caption.weight(.semibold))
+                    Text(app.state.rawValue).font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Circle().fill(app.state.color).frame(width: 7, height: 7)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.tertiary)
             }
-            Spacer()
-            Circle().fill(app.state.color).frame(width: 7, height: 7)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 7)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(Color.primary.opacity(0.001), in: RoundedRectangle(cornerRadius: 8))
+        .help("Show \(app.platform.rawValue) version details")
+    }
+}
+
+private struct StoreVersionDetailsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let app: StoreApp
+
+    private struct DetailField: Identifiable {
+        let label: String
+        let value: String
+        var id: String { label }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: app.platform.icon)
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(app.platform.tint)
+                    .frame(width: 44, height: 44)
+                    .background(app.platform.tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(app.platform.shortName) · \(app.version)")
+                        .font(.title2.weight(.bold))
+                    Text("\(app.name) · Latest data returned by \(app.platform.rawValue)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                StatusPill(state: app.state)
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .background(Color.primary.opacity(0.06), in: Circle())
+                .help("Close")
+            }
+            .padding(22)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    detailSection("VERSION", fields: versionFields)
+
+                    if !releaseFields.isEmpty {
+                        detailSection(
+                            app.platform == .appStore ? "APP STORE RELEASE" : "GOOGLE PLAY RELEASE",
+                            fields: releaseFields
+                        )
+                    }
+
+                    if let notes = app.versionDetails?.releaseNotes, !notes.isEmpty {
+                        releaseNotesSection(notes)
+                    }
+
+                    Label(
+                        "These values reflect the most recent successful store sync.",
+                        systemImage: "arrow.triangle.2.circlepath"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 2)
+                }
+                .padding(22)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .background(Theme.canvas)
+    }
+
+    private var versionFields: [DetailField] {
+        var fields = [
+            DetailField(label: app.platform == .appStore ? "Version" : "Latest build", value: app.version),
+            DetailField(label: "Status", value: app.state.rawValue),
+            DetailField(
+                label: app.platform == .appStore ? "Bundle identifier" : "Package name",
+                value: app.bundleID
+            ),
+            DetailField(
+                label: app.platform == .appStore ? "Apple app ID" : "Store identifier",
+                value: app.storeID
+            )
+        ]
+        append(app.remoteState.map(displayAPIValue), label: "API status", to: &fields)
+        append(app.primaryLocale, label: "Primary locale", to: &fields)
+        append(app.versionID, label: "Version resource ID", to: &fields)
+        append(app.appInfoID, label: "App info resource ID", to: &fields)
+        return fields
+    }
+
+    private var releaseFields: [DetailField] {
+        guard let details = app.versionDetails else { return [] }
+        var fields: [DetailField] = []
+
+        if app.platform == .appStore {
+            append(details.platformName.map(displayAPIValue), label: "Platform", to: &fields)
+            append(details.releaseType.map(displayAPIValue), label: "Release type", to: &fields)
+            append(details.reviewType.map(displayAPIValue), label: "Review type", to: &fields)
+            append(details.createdDate.map(formattedDate), label: "Created", to: &fields)
+            append(details.earliestReleaseDate.map(formattedDate), label: "Earliest release", to: &fields)
+            append(details.copyright, label: "Copyright", to: &fields)
+            append(details.downloadable.map(yesNo), label: "Downloadable", to: &fields)
+            append(details.usesIDFA.map(yesNo), label: "Uses IDFA", to: &fields)
+        } else {
+            append(details.track.map(displayAPIValue), label: "Track", to: &fields)
+            append(details.releaseName, label: "Release name", to: &fields)
+            append(details.versionCodes?.joined(separator: ", "), label: "Version codes", to: &fields)
+            append(
+                details.userFraction.map {
+                    $0.formatted(.percent.precision(.fractionLength(0...2)))
+                },
+                label: "Staged rollout",
+                to: &fields
+            )
+            append(
+                details.inAppUpdatePriority.map { "\($0) of 5" },
+                label: "In-app update priority",
+                to: &fields
+            )
+            append(details.countryTargeting.map(countryTargeting), label: "Country targeting", to: &fields)
+        }
+
+        return fields
+    }
+
+    private func detailSection(_ title: String, fields: [DetailField]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.caption2.weight(.bold))
+                .tracking(0.75)
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 10)
+            VStack(spacing: 0) {
+                ForEach(Array(fields.enumerated()), id: \.element.id) { index, field in
+                    HStack(alignment: .firstTextBaseline, spacing: 18) {
+                        Text(field.label)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 145, alignment: .leading)
+                        Text(field.value)
+                            .font(.subheadline)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    if index < fields.count - 1 {
+                        Divider().padding(.leading, 173)
+                    }
+                }
+            }
+            .background(Theme.card.opacity(0.75), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(Theme.border))
+        }
+    }
+
+    private func releaseNotesSection(_ notes: [StoreVersionReleaseNote]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("RELEASE NOTES")
+                .font(.caption2.weight(.bold))
+                .tracking(0.75)
+                .foregroundStyle(.secondary)
+            ForEach(Array(notes.enumerated()), id: \.offset) { _, note in
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(localizedLanguage(note.language))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(app.platform.tint)
+                    Text(note.text)
+                        .font(.subheadline)
+                        .lineSpacing(3)
+                        .textSelection(.enabled)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.card.opacity(0.75), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(Theme.border))
+            }
+        }
+    }
+
+    private func append(_ value: String?, label: String, to fields: inout [DetailField]) {
+        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        fields.append(DetailField(label: label, value: value))
+    }
+
+    private func formattedDate(_ date: Date) -> String {
+        date.formatted(date: .long, time: .shortened)
+    }
+
+    private func yesNo(_ value: Bool) -> String {
+        value ? "Yes" : "No"
+    }
+
+    private func countryTargeting(_ targeting: StoreCountryTargeting) -> String {
+        var parts = targeting.countries.sorted()
+        if targeting.includesRestOfWorld { parts.append("Rest of world") }
+        return parts.isEmpty ? "No countries returned" : parts.joined(separator: ", ")
+    }
+
+    private func localizedLanguage(_ identifier: String) -> String {
+        let name = Locale.current.localizedString(forIdentifier: identifier) ?? identifier
+        return "\(name) · \(identifier)"
+    }
+
+    private func displayAPIValue(_ value: String) -> String {
+        switch value {
+        case "IOS": return "iOS"
+        case "APP_STORE": return "App Store"
+        case "inProgress": return "In progress"
+        case "statusUnspecified": return "Unspecified"
+        default:
+            return value
+                .replacingOccurrences(of: "_", with: " ")
+                .lowercased()
+                .capitalized
         }
     }
 }

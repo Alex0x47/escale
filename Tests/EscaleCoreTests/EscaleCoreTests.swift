@@ -99,6 +99,27 @@ func editableAppStoreState() {
     #expect(!live.hasEditableMetadataVersion)
 }
 
+@Test("Store apps saved before version details remain decodable")
+func legacyStoreAppDecoding() throws {
+    let data = Data(
+        """
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "platform": "App Store",
+          "name": "App",
+          "bundleID": "com.example.app",
+          "storeID": "123456789",
+          "version": "1.0",
+          "state": "Ready for distribution"
+        }
+        """.utf8
+    )
+
+    let app = try JSONDecoder().decode(StoreApp.self, from: data)
+    #expect(app.versionDetails == nil)
+    #expect(app.bundleID == "com.example.app")
+}
+
 @Test("Store locale aliases merge without collapsing regional variants")
 func localeCanonicalization() {
     #expect(canonicalStoreLocale("ja") == canonicalStoreLocale("ja-JP"))

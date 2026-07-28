@@ -63,6 +63,7 @@ public struct StoreApp: Identifiable, Codable, Hashable, Sendable {
     public var iconURL: String? = nil
     public var remoteState: String? = nil
     public var primaryLocale: String? = nil
+    public var versionDetails: StoreVersionDetails? = nil
 
     public var hasEditableMetadataVersion: Bool {
         guard platform == .appStore else { return true }
@@ -72,6 +73,79 @@ public struct StoreApp: Identifiable, Codable, Hashable, Sendable {
     private static let editableAppStoreStates: Set<String> = [
         "PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED", "INVALID_BINARY"
     ]
+}
+
+public struct StoreVersionDetails: Codable, Hashable, Sendable {
+    public var platformName: String? = nil
+    public var releaseType: String? = nil
+    public var earliestReleaseDate: Date? = nil
+    public var createdDate: Date? = nil
+    public var copyright: String? = nil
+    public var usesIDFA: Bool? = nil
+    public var downloadable: Bool? = nil
+    public var reviewType: String? = nil
+
+    public var track: String? = nil
+    public var releaseName: String? = nil
+    public var versionCodes: [String]? = nil
+    public var userFraction: Double? = nil
+    public var inAppUpdatePriority: Int? = nil
+    public var countryTargeting: StoreCountryTargeting? = nil
+    public var releaseNotes: [StoreVersionReleaseNote]? = nil
+
+    public init(
+        platformName: String? = nil,
+        releaseType: String? = nil,
+        earliestReleaseDate: Date? = nil,
+        createdDate: Date? = nil,
+        copyright: String? = nil,
+        usesIDFA: Bool? = nil,
+        downloadable: Bool? = nil,
+        reviewType: String? = nil,
+        track: String? = nil,
+        releaseName: String? = nil,
+        versionCodes: [String]? = nil,
+        userFraction: Double? = nil,
+        inAppUpdatePriority: Int? = nil,
+        countryTargeting: StoreCountryTargeting? = nil,
+        releaseNotes: [StoreVersionReleaseNote]? = nil
+    ) {
+        self.platformName = platformName
+        self.releaseType = releaseType
+        self.earliestReleaseDate = earliestReleaseDate
+        self.createdDate = createdDate
+        self.copyright = copyright
+        self.usesIDFA = usesIDFA
+        self.downloadable = downloadable
+        self.reviewType = reviewType
+        self.track = track
+        self.releaseName = releaseName
+        self.versionCodes = versionCodes
+        self.userFraction = userFraction
+        self.inAppUpdatePriority = inAppUpdatePriority
+        self.countryTargeting = countryTargeting
+        self.releaseNotes = releaseNotes
+    }
+}
+
+public struct StoreCountryTargeting: Codable, Hashable, Sendable {
+    public var countries: [String]
+    public var includesRestOfWorld: Bool
+
+    public init(countries: [String], includesRestOfWorld: Bool) {
+        self.countries = countries
+        self.includesRestOfWorld = includesRestOfWorld
+    }
+}
+
+public struct StoreVersionReleaseNote: Codable, Hashable, Sendable {
+    public var language: String
+    public var text: String
+
+    public init(language: String, text: String) {
+        self.language = language
+        self.text = text
+    }
 }
 
 public struct UnifiedApp: Identifiable, Codable, Hashable, Sendable {

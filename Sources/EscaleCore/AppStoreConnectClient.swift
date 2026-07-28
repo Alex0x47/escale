@@ -195,6 +195,7 @@ public struct AppStoreConnectClient: Sendable {
             app.state = version.state
             app.versionID = version.id
             app.remoteState = version.remoteState
+            app.versionDetails = version.details
             successfulReads += 1
         } catch {
             firstError = firstError ?? error
@@ -337,7 +338,7 @@ public struct AppStoreConnectClient: Sendable {
         let cleanVersion = versionString.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanVersion.isEmpty else { throw APIError.invalidCredentials("Enter a version number, for example 2.4.0.") }
         let versions = try await versionResources(appID: importedApp.storeID)
-        if let editable = versions.first(where: { Self.editableStates.contains($0.dictionary("attributes").string("appStoreState") ?? "") }) {
+        if let editable = versions.first(where: { Self.editableStates.contains(appleVersionState($0.dictionary("attributes"))) }) {
             let value = editable.dictionary("attributes").string("versionString") ?? "the existing draft"
             throw APIError.unsupported("Version " + value + " is already editable. App Store Connect allows only one editable iOS version at a time.")
         }
@@ -363,7 +364,14 @@ public struct AppStoreConnectClient: Sendable {
         app.versionID = versionID
         app.appInfoID = editableAppInfoID
         app.state = .draft
-        app.remoteState = "PREPARE_FOR_SUBMISSION"
+        let createdAttributes = response.dictionary("data").dictionary("attributes")
+        let createdState = appleVersionState(createdAttributes)
+        app.remoteState = createdState.isEmpty ? "PREPARE_FOR_SUBMISSION" : createdState
+        var createdDetails = appleVersionDetails(createdAttributes)
+        if createdDetails.platformName == nil { createdDetails.platformName = "IOS" }
+        if createdDetails.releaseType == nil { createdDetails.releaseType = "MANUAL" }
+        if createdDetails.usesIDFA == nil { createdDetails.usesIDFA = false }
+        app.versionDetails = createdDetails
 
         var draftLocalizations = (try? await fetchLocalizations(versionID: versionID, appInfoID: editableAppInfoID)) ?? []
         if draftLocalizations.isEmpty {
@@ -541,7 +549,7 @@ public struct AppStoreConnectClient: Sendable {
 
     private func preferredLiveVersion(in resources: [[String: Any]]) -> [String: Any]? {
         resources.filter {
-            ["READY_FOR_DISTRIBUTION", "READY_FOR_SALE"].contains($0.dictionary("attributes").string("appStoreState") ?? "")
+            ["READY_FOR_DISTRIBUTION", "READY_FOR_SALE"].contains(appleVersionState($0.dictionary("attributes")))
         }.max { lhs, rhs in
             (lhs.dictionary("attributes").string("versionString") ?? "0").compare(
                 rhs.dictionary("attributes").string("versionString") ?? "0", options: .numeric
@@ -549,13 +557,19 @@ public struct AppStoreConnectClient: Sendable {
         }
     }
 
-    private func currentVersion(appID: String) async throws -> (id: String, version: String, state: ReleaseState, remoteState: String) {
+    private func currentVersion(appID: String) async throws -> (
+        id: String,
+        version: String,
+        state: ReleaseState,
+        remoteState: String,
+        details: StoreVersionDetails
+    ) {
         let resources = try await versionResources(appID: appID)
         let activeVersions = resources.filter { resource in
-            let state = resource.dictionary("attributes").string("appStoreState") ?? ""
+            let state = appleVersionState(resource.dictionary("attributes"))
             return !["REPLACED_WITH_NEW_VERSION", "DEVELOPER_REMOVED_FROM_SALE"].contains(state)
         }
-        let editable = activeVersions.filter { Self.editableStates.contains($0.dictionary("attributes").string("appStoreState") ?? "") }
+        let editable = activeVersions.filter { Self.editableStates.contains(appleVersionState($0.dictionary("attributes"))) }
         let candidates = editable.isEmpty ? (activeVersions.isEmpty ? resources : activeVersions) : editable
         let preferred = candidates.max { lhs, rhs in
             let left = lhs.dictionary("attributes").string("versionString") ?? "0"
@@ -567,8 +581,14 @@ public struct AppStoreConnectClient: Sendable {
             throw APIError.unsupported("This app has no iOS App Store version yet. Create a version in Escale first.")
         }
         let attributes = preferred.dictionary("attributes")
-        let remoteState = attributes.string("appStoreState") ?? ""
-        return (id, attributes.string("versionString") ?? "—", mapAppleState(remoteState), remoteState)
+        let remoteState = appleVersionState(attributes)
+        return (
+            id,
+            attributes.string("versionString") ?? "—",
+            mapAppleState(remoteState),
+            remoteState,
+            appleVersionDetails(attributes)
+        )
     }
 
     private func currentAppInfoID(appID: String) async throws -> String? {
@@ -1074,6 +1094,7 @@ public struct AppStoreConnectClient: Sendable {
 private extension Dictionary where Key == String, Value == Any {
     func string(_ key: String) -> String? { self[key] as? String }
     func int(_ key: String) -> Int? { self[key] as? Int }
+    func bool(_ key: String) -> Bool? { (self[key] as? Bool) ?? (self[key] as? NSNumber)?.boolValue }
     func dictionary(_ key: String) -> [String: Any] { self[key] as? [String: Any] ?? [:] }
     func array(_ key: String) -> [[String: Any]] { self[key] as? [[String: Any]] ?? [] }
     func resources(_ key: String) -> [[String: Any]] { array(key) }
@@ -1083,6 +1104,23 @@ private extension Dictionary where Key == String, Value == Any {
         if let value = self[key] as? String { return Double(value) }
         return nil
     }
+}
+
+private func appleVersionState(_ attributes: [String: Any]) -> String {
+    attributes.string("appVersionState") ?? attributes.string("appStoreState") ?? ""
+}
+
+private func appleVersionDetails(_ attributes: [String: Any]) -> StoreVersionDetails {
+    StoreVersionDetails(
+        platformName: attributes.string("platform"),
+        releaseType: attributes.string("releaseType"),
+        earliestReleaseDate: parseISODate(attributes.string("earliestReleaseDate")),
+        createdDate: parseISODate(attributes.string("createdDate")),
+        copyright: attributes.string("copyright"),
+        usesIDFA: attributes.bool("usesIdfa"),
+        downloadable: attributes.bool("downloadable"),
+        reviewType: attributes.string("reviewType")
+    )
 }
 
 public func parseISODate(_ value: String?) -> Date? {

@@ -11,9 +11,6 @@ public struct ListingEditorView: View {
     @State private var isTranslating = false
     @State private var translatingFields: Set<ListingMetadataField> = []
     @State private var isTranslatingPlayReleaseNotes = false
-    @State private var isCreatingVersion = false
-    @State private var showingNewVersion = false
-    @State private var newVersionNumber = ""
     @State private var proFeature: EscaleFeature?
 
     public var body: some View {
@@ -34,7 +31,6 @@ public struct ListingEditorView: View {
                 selectedLocalizationID = ids.first
             }
         }
-        .sheet(isPresented: $showingNewVersion) { newVersionSheet }
         .sheet(item: $proFeature) { feature in
             ProFeatureSheet(feature: feature)
         }
@@ -145,14 +141,7 @@ public struct ListingEditorView: View {
             }
         } else {
             VStack(spacing: 14) {
-                EmptyState(icon: "character.book.closed", title: "No localization", message: "Create an iOS version or add a language to begin editing your store listing.")
-                if let apple = store.selectedApp?.appStoreApp, !apple.hasEditableMetadataVersion {
-                    Button {
-                        newVersionNumber = suggestedNextVersion(from: apple.version)
-                        showingNewVersion = true
-                    } label: { Label("Create iOS version", systemImage: "plus.circle.fill") }
-                    .buttonStyle(.borderedProminent)
-                }
+                EmptyState(icon: "character.book.closed", title: "No localization", message: "Add a language to begin editing your store listing.")
             }
         }
     }
@@ -174,15 +163,6 @@ public struct ListingEditorView: View {
                 }
             }
             Spacer()
-            if let apple = store.selectedApp?.appStoreApp, !apple.hasEditableMetadataVersion {
-                Button {
-                    newVersionNumber = suggestedNextVersion(from: apple.version)
-                    showingNewVersion = true
-                } label: { Label("New iOS version", systemImage: "plus.circle") }
-                .buttonStyle(.bordered)
-            } else if let apple = store.selectedApp?.appStoreApp {
-                Text("iOS \(apple.version) draft").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            }
             Button {
                 guard let source = store.selectedPrimaryLocalization else { return }
                 isTranslating = true
@@ -378,40 +358,6 @@ public struct ListingEditorView: View {
 
     private func metadataViolations(_ localization: ListingLocalization) -> [String] {
         limits.violations(in: localization, platforms: store.platformFilter.platforms.intersection(store.selectedAvailablePlatforms))
-    }
-
-    private var newVersionSheet: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            SectionTitle("Create an iOS version", subtitle: "Creates an editable App Store Connect draft. Escale will not submit it for review.", eyebrow: "App Store Connect")
-            TextField("Version, for example 2.4.0", text: $newVersionNumber)
-                .textFieldStyle(.roundedBorder)
-            Text("The previous live version’s promotional text is loaded automatically for every matching localization.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Spacer()
-                Button("Cancel") { showingNewVersion = false }.keyboardShortcut(.cancelAction)
-                Button("Create version") {
-                    isCreatingVersion = true
-                    Task {
-                        if await store.createAppStoreVersion(newVersionNumber) { showingNewVersion = false }
-                        isCreatingVersion = false
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(newVersionNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isCreatingVersion)
-            }
-        }
-        .padding(24)
-        .frame(width: 500)
-    }
-
-    private func suggestedNextVersion(from version: String) -> String {
-        var parts = version.split(separator: ".").compactMap { Int($0) }
-        guard !parts.isEmpty else { return "1.0.0" }
-        while parts.count < 3 { parts.append(0) }
-        parts[parts.count - 1] += 1
-        return parts.map(String.init).joined(separator: ".")
     }
 
     private func field(

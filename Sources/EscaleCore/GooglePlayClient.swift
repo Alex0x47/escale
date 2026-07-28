@@ -98,7 +98,8 @@ public struct GooglePlayClient: Sendable {
             let app = StoreApp(
                 id: UUID(), platform: .playStore, name: appName, bundleID: packageName, storeID: packageName,
                 version: releaseInfo.version, state: releaseInfo.state, versionID: nil, appInfoID: nil,
-                primaryLocale: primaryLocale
+                remoteState: releaseInfo.remoteState, primaryLocale: primaryLocale,
+                versionDetails: releaseInfo.details
             )
             await progress?(StoreFetchProgress(completed: 4, total: 4, detail: "Applying the live Google Play data…"))
             return StoreSnapshot(
@@ -302,7 +303,12 @@ public struct GooglePlayClient: Sendable {
         return response.string("defaultLanguage")
     }
 
-    private func fetchRelease(packageName: String, editID: String) async throws -> (version: String, state: ReleaseState) {
+    private func fetchRelease(packageName: String, editID: String) async throws -> (
+        version: String,
+        state: ReleaseState,
+        remoteState: String?,
+        details: StoreVersionDetails
+    ) {
         let response = try await request(path: "/applications/\(encoded(packageName))/edits/\(encoded(editID))/tracks").value
         let tracks = response.array("tracks")
         let production = tracks.first(where: { $0.string("track") == "production" }) ?? tracks.first
@@ -315,7 +321,27 @@ public struct GooglePlayClient: Sendable {
         case "draft": .draft
         default: .draft
         }
-        return (versionCodes.first.map { "build \($0)" } ?? "—", state)
+        let countryTargeting = release?.dictionaryOptional("countryTargeting").map {
+            StoreCountryTargeting(
+                countries: $0.arrayValues("countries").compactMap { $0 as? String },
+                includesRestOfWorld: $0.bool("includeRestOfWorld") ?? false
+            )
+        }
+        let releaseNotes = release?.array("releaseNotes").compactMap { note -> StoreVersionReleaseNote? in
+            guard let language = note.string("language"),
+                  let text = note.string("text") else { return nil }
+            return StoreVersionReleaseNote(language: language, text: text)
+        }
+        let details = StoreVersionDetails(
+            track: production?.string("track"),
+            releaseName: release?.string("name"),
+            versionCodes: versionCodes.isEmpty ? nil : versionCodes,
+            userFraction: release?.double("userFraction"),
+            inAppUpdatePriority: release?.int("inAppUpdatePriority"),
+            countryTargeting: countryTargeting,
+            releaseNotes: releaseNotes?.isEmpty == false ? releaseNotes : nil
+        )
+        return (versionCodes.first.map { "build \($0)" } ?? "—", state, status, details)
     }
 
     private func fetchScreenshots(packageName: String, editID: String, localizations: [ListingLocalization]) async throws -> [StoreScreenshot] {
@@ -701,6 +727,8 @@ private extension Dictionary where Key == String, Value == Any {
         return nil
     }
     func int(_ key: String) -> Int? { (self[key] as? Int) ?? (self[key] as? NSNumber)?.intValue }
+    func double(_ key: String) -> Double? { (self[key] as? Double) ?? (self[key] as? NSNumber)?.doubleValue }
+    func bool(_ key: String) -> Bool? { (self[key] as? Bool) ?? (self[key] as? NSNumber)?.boolValue }
     func dictionary(_ key: String) -> [String: Any] { self[key] as? [String: Any] ?? [:] }
     func dictionaryOptional(_ key: String) -> [String: Any]? { self[key] as? [String: Any] }
     func array(_ key: String) -> [[String: Any]] { self[key] as? [[String: Any]] ?? [] }

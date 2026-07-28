@@ -13,12 +13,41 @@ public enum SampleData {
             appStoreApp: StoreApp(
                 id: UUID(), platform: .appStore, name: "Northstar Journal",
                 bundleID: "com.acme.northstar", storeID: "6479357934",
-                version: "2.4.0", state: .ready, versionID: nil, appInfoID: nil
+                version: "2.4.0", state: .ready, versionID: "ios-version-240", appInfoID: "northstar-app-info",
+                remoteState: "READY_FOR_DISTRIBUTION", primaryLocale: "en-US",
+                versionDetails: StoreVersionDetails(
+                    platformName: "IOS",
+                    releaseType: "MANUAL",
+                    createdDate: Date().addingTimeInterval(-86_400 * 18),
+                    copyright: "2026 Acme Studio",
+                    usesIDFA: false,
+                    downloadable: true,
+                    reviewType: "APP_STORE"
+                )
             ),
             playStoreApp: StoreApp(
                 id: UUID(), platform: .playStore, name: "Northstar Journal",
                 bundleID: "com.acme.northstar", storeID: "com.acme.northstar",
-                version: "2.4.0", state: .review, versionID: nil, appInfoID: nil
+                version: "build 240", state: .review, versionID: nil, appInfoID: nil,
+                remoteState: "inProgress", primaryLocale: "en-US",
+                versionDetails: StoreVersionDetails(
+                    track: "production",
+                    releaseName: "2.4.0",
+                    versionCodes: ["240"],
+                    userFraction: 0.25,
+                    inAppUpdatePriority: 2,
+                    countryTargeting: StoreCountryTargeting(countries: ["US", "GB", "DE", "FR"], includesRestOfWorld: true),
+                    releaseNotes: [
+                        StoreVersionReleaseNote(
+                            language: "en-US",
+                            text: "A calmer writing experience, smarter weekly insights, and faster sync across devices."
+                        ),
+                        StoreVersionReleaseNote(
+                            language: "fr-FR",
+                            text: "Une écriture plus fluide, de nouveaux bilans hebdomadaires et une synchronisation accélérée."
+                        )
+                    ]
+                )
             )
         )
         let second = UnifiedApp(
@@ -29,7 +58,15 @@ public enum SampleData {
             appStoreApp: StoreApp(
                 id: UUID(), platform: .appStore, name: "Luma Habits",
                 bundleID: "app.luma.habits", storeID: "6451102188",
-                version: "1.8.2", state: .draft, versionID: nil, appInfoID: nil
+                version: "1.8.2", state: .draft, versionID: "ios-version-182", appInfoID: "luma-app-info",
+                remoteState: "PREPARE_FOR_SUBMISSION", primaryLocale: "en-US",
+                versionDetails: StoreVersionDetails(
+                    platformName: "IOS",
+                    releaseType: "MANUAL",
+                    createdDate: Date().addingTimeInterval(-86_400 * 3),
+                    usesIDFA: false,
+                    reviewType: "APP_STORE"
+                )
             ),
             playStoreApp: nil
         )

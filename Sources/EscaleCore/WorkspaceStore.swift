@@ -1305,6 +1305,13 @@ public final class WorkspaceStore: ObservableObject {
         await refreshApp(id: selectedAppID, showFeedback: true)
     }
 
+    public func refreshAppIfNeeded(id: UUID) async {
+        guard workspace.apps.contains(where: { $0.id == id }),
+              !loadedAppIDs.contains(id),
+              !loadingAppIDs.contains(id) else { return }
+        await refreshApp(id: id, showFeedback: true)
+    }
+
     private func refreshApp(id: UUID, showFeedback: Bool) async {
         guard !isDemoMode, !loadingAppIDs.contains(id),
               let app = workspace.apps.first(where: { $0.id == id }) else { return }

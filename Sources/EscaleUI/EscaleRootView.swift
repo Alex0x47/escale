@@ -19,6 +19,10 @@ public struct EscaleRootView: View {
             OnboardingView()
                 .environmentObject(store)
         }
+        .onChange(of: store.selectedAppID, initial: true) { _, appID in
+            guard let appID else { return }
+            Task { await store.refreshAppIfNeeded(id: appID) }
+        }
         .tint(Theme.accent)
     }
 }

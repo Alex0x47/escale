@@ -765,6 +765,15 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     public func createAppStoreVersion(_ versionString: String) async -> Bool {
+        guard entitlements.plan == .pro else {
+            track(.proGateViewed(feature: .createAppStoreVersion))
+            showToast(
+                "Escale Pro required",
+                detail: EscaleFeature.createAppStoreVersion.upgradeDescription,
+                kind: .neutral
+            )
+            return false
+        }
         guard let appID = selectedAppID,
               let appIndex = workspace.apps.firstIndex(where: { $0.id == appID }),
               let appleApp = workspace.apps[appIndex].appStoreApp else { return false }
@@ -796,6 +805,99 @@ public final class WorkspaceStore: ObservableObject {
                 ? "The draft is editable. It has not been submitted for review."
                 : "Your pending localization changes are preserved and can now be saved. The draft was not submitted for review."
             showToast("Version \(draft.app.version) created", detail: successDetail, kind: .success)
+            return true
+        } catch {
+            showError(error)
+            return false
+        }
+    }
+
+    public func createGooglePlayDraftRelease(
+        bundleFileURL: URL,
+        track: String,
+        releaseName: String
+    ) async -> Bool {
+        guard entitlements.plan == .pro else {
+            self.track(.proGateViewed(feature: .uploadGooglePlayBundle))
+            showToast(
+                "Escale Pro required",
+                detail: EscaleFeature.uploadGooglePlayBundle.upgradeDescription,
+                kind: .neutral
+            )
+            return false
+        }
+        guard let appID = selectedAppID,
+              let appIndex = workspace.apps.firstIndex(where: { $0.id == appID }),
+              var googleApp = workspace.apps[appIndex].playStoreApp else { return false }
+
+        let access = bundleFileURL.startAccessingSecurityScopedResource()
+        defer {
+            if access { bundleFileURL.stopAccessingSecurityScopedResource() }
+        }
+
+        do {
+            guard !isDemoMode else {
+                throw APIError.unsupported("Uploading remote Android bundles is unavailable in demo mode.")
+            }
+            guard bundleFileURL.pathExtension.caseInsensitiveCompare("aab") == .orderedSame else {
+                throw APIError.invalidCredentials("Choose a signed Android App Bundle with the .aab extension.")
+            }
+            let resourceValues = try bundleFileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            guard resourceValues.isRegularFile == true, (resourceValues.fileSize ?? 0) > 0 else {
+                throw APIError.invalidCredentials("The selected Android App Bundle is empty or unreadable.")
+            }
+            guard let credentials = try CredentialStore.google() else {
+                throw APIError.missingCredentials(.playStore)
+            }
+
+            let taggedReleaseNotes = workspace.googlePlayReleaseNotesByApp?[appID] ?? ""
+            let releaseNotes: [StoreVersionReleaseNote]
+            if googlePlayReleaseNotesValidationIssues(taggedReleaseNotes).isEmpty {
+                releaseNotes = googlePlayReleaseNotes(in: taggedReleaseNotes)
+                    .filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                    .map { StoreVersionReleaseNote(language: $0.locale, text: $0.text) }
+            } else {
+                releaseNotes = []
+            }
+
+            showToast(
+                "Preparing Android bundle…",
+                detail: "Google Play will validate the package, signing key, and version code.",
+                kind: .progress
+            )
+            let result = try await GooglePlayClient(credentials: credentials).createDraftRelease(
+                bundleFileURL: bundleFileURL,
+                packageName: googleApp.bundleID,
+                track: track,
+                releaseName: releaseName,
+                releaseNotes: releaseNotes
+            ) { [weak self] progress in
+                self?.showToast(
+                    "Uploading Android bundle…",
+                    detail: progress.detail,
+                    kind: .progress
+                )
+            }
+
+            googleApp.version = "build \(result.versionCode)"
+            googleApp.state = .draft
+            googleApp.remoteState = "draft"
+            googleApp.versionDetails = StoreVersionDetails(
+                track: result.track,
+                releaseName: result.releaseName,
+                versionCodes: [String(result.versionCode)],
+                releaseNotes: result.releaseNotes,
+                bundleSHA1: result.sha1,
+                bundleSHA256: result.sha256
+            )
+            workspace.apps[appIndex].playStoreApp = googleApp
+            loadedAppIDs.insert(appID)
+            persist()
+            showToast(
+                "Android draft \(result.versionCode) created",
+                detail: "The signed bundle is on \(result.track) as a draft. It has not been submitted for review or released.",
+                kind: .success
+            )
             return true
         } catch {
             showError(error)

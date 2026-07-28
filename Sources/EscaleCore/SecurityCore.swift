@@ -342,6 +342,26 @@ public enum HTTPTransport {
         return HTTPResponse(data: data, response: http)
     }
 
+    public static func upload(
+        url: URL,
+        method: String = "POST",
+        headers: [String: String] = [:],
+        fileURL: URL,
+        timeout: TimeInterval = 120
+    ) async throws -> HTTPResponse {
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.timeoutInterval = timeout
+        request.setValue("Escale/0.2 macOS", forHTTPHeaderField: "User-Agent")
+        headers.forEach { request.setValue($0.value, forHTTPHeaderField: $0.key) }
+        let (data, response) = try await URLSession.shared.upload(for: request, fromFile: fileURL)
+        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        guard 200..<300 ~= http.statusCode else {
+            throw APIError.http(status: http.statusCode, message: errorMessage(from: data))
+        }
+        return HTTPResponse(data: data, response: http)
+    }
+
     public static func jsonBody(_ object: Any) throws -> Data {
         try JSONSerialization.data(withJSONObject: object, options: [.withoutEscapingSlashes])
     }

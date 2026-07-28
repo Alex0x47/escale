@@ -581,6 +581,8 @@ private struct StoreVersionDetailsSheet: View {
                 to: &fields
             )
             append(details.countryTargeting.map(countryTargeting), label: "Country targeting", to: &fields)
+            append(details.bundleSHA1, label: "Bundle SHA-1", to: &fields)
+            append(details.bundleSHA256, label: "Bundle SHA-256", to: &fields)
         }
 
         return fields

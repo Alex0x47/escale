@@ -24,12 +24,19 @@ func communityEntitlements() {
 @Test("A private entitlement provider can unlock selected Pro capabilities")
 func extensibleProEntitlements() {
     let entitlements = TestProEntitlements(
-        enabledFeatures: [.applyRegionalPricing, .bulkTranslations]
+        enabledFeatures: [
+            .applyRegionalPricing,
+            .bulkTranslations,
+            .createAppStoreVersion,
+            .uploadGooglePlayBundle
+        ]
     )
 
     #expect(entitlements.plan == .pro)
     #expect(entitlements.hasAccess(to: .applyRegionalPricing))
     #expect(entitlements.hasAccess(to: .bulkTranslations))
+    #expect(entitlements.hasAccess(to: .createAppStoreVersion))
+    #expect(entitlements.hasAccess(to: .uploadGooglePlayBundle))
     #expect(!entitlements.hasAccess(to: .multipleDeveloperAccounts))
 }
 
@@ -180,6 +187,30 @@ func googleDraftCommitSafety() {
     let query = Dictionary(uniqueKeysWithValues: googleDraftCommitQueryItems().map { ($0.name, $0.value) })
     #expect(query["changesNotSentForReview"] == "true")
     #expect(query["changesInReviewBehavior"] == "ERROR_IF_IN_REVIEW")
+}
+
+@Test("Android bundle uploads create an editable draft release payload")
+func googleBundleDraftReleasePayload() throws {
+    let payload = googleDraftReleasePayload(
+        track: "production",
+        versionCode: 240,
+        releaseName: "  2.4.0  ",
+        releaseNotes: [
+            StoreVersionReleaseNote(language: "en-US", text: "Faster sync."),
+            StoreVersionReleaseNote(language: "fr-FR", text: "Synchronisation accélérée.")
+        ]
+    )
+    #expect(payload["track"] as? String == "production")
+    let releases = try #require(payload["releases"] as? [[String: Any]])
+    let release = try #require(releases.first)
+    #expect(release["name"] as? String == "2.4.0")
+    #expect(release["status"] as? String == "draft")
+    #expect(release["versionCodes"] as? [String] == ["240"])
+    let notes = try #require(release["releaseNotes"] as? [[String: String]])
+    #expect(notes == [
+        ["language": "en-US", "text": "Faster sync."],
+        ["language": "fr-FR", "text": "Synchronisation accélérée."]
+    ])
 }
 
 @Test("Google automatic-review fallback omits only the unsupported hold flag")

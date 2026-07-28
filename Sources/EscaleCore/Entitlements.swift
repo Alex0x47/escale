@@ -19,6 +19,8 @@ public enum EscaleFeature: String, CaseIterable, Codable, Hashable, Identifiable
     case pricingHistoryAndAuditLog
     case scheduledSynchronizationAndAutomation
     case agencyWorkflows
+    case createAppStoreVersion
+    case uploadGooglePlayBundle
 
     public var id: String { rawValue }
 
@@ -30,6 +32,8 @@ public enum EscaleFeature: String, CaseIterable, Codable, Hashable, Identifiable
         case .pricingHistoryAndAuditLog: "Pricing history and audit log"
         case .scheduledSynchronizationAndAutomation: "Scheduled synchronization and automation"
         case .agencyWorkflows: "Agency workflows"
+        case .createAppStoreVersion: "Create iOS versions"
+        case .uploadGooglePlayBundle: "Create Android versions"
         }
     }
 
@@ -47,6 +51,10 @@ public enum EscaleFeature: String, CaseIterable, Codable, Hashable, Identifiable
             "Schedule store synchronization and automate recurring operational work."
         case .agencyWorkflows:
             "Organize clients, accounts, permissions, and repeatable workflows for agency use."
+        case .createAppStoreVersion:
+            "Use Escale Pro to create a new editable iOS version directly in App Store Connect."
+        case .uploadGooglePlayBundle:
+            "Use Escale Pro to upload a signed Android App Bundle and create an editable Google Play draft release."
         }
     }
 }

@@ -20,15 +20,22 @@ public struct PricingView: View {
         VStack(spacing: 0) {
             header
             Divider()
-            if let productID = selectedProductID ?? store.selectedProducts.first?.id {
+            if let productID = activeProductID {
                 pricingWorkspace(productID: productID)
             } else {
-                EmptyState(icon: "tag.slash", title: "No products", message: "Sync an in-app purchase or subscription to calculate fair regional prices.")
+                EmptyState(
+                    icon: "tag.slash",
+                    title: emptyProductsTitle,
+                    message: emptyProductsMessage
+                )
             }
         }
         .background(Theme.canvas)
         .navigationTitle("PPP pricing")
-        .onAppear { if selectedProductID == nil { selectedProductID = store.selectedProducts.first?.id } }
+        .onAppear { selectFirstAvailableProductIfNeeded() }
+        .onChange(of: store.selectedAppID) { _, _ in selectFirstAvailableProductIfNeeded(force: true) }
+        .onChange(of: store.platformFilter) { _, _ in selectFirstAvailableProductIfNeeded() }
+        .onChange(of: filteredProductIDs) { _, _ in selectFirstAvailableProductIfNeeded() }
         .confirmationDialog(
             "Move existing subscribers to the new prices?",
             isPresented: $showingMigrationConfirmation,
@@ -58,12 +65,79 @@ public struct PricingView: View {
         HStack(alignment: .center, spacing: 18) {
             SectionTitle("Purchasing power pricing", subtitle: "Make your products more affordable without flattening every market.", eyebrow: "Monetization")
             Spacer()
-            Picker("Product", selection: Binding(get: { selectedProductID ?? store.selectedProducts.first?.id }, set: { selectedProductID = $0 })) {
-                ForEach(store.selectedProducts) { product in Text(product.name).tag(Optional(product.id)) }
+            Picker("Product", selection: Binding(get: { activeProductID }, set: { selectedProductID = $0 })) {
+                ForEach(filteredProducts) { product in
+                    Label(productPickerTitle(product), systemImage: productPickerIcon(product))
+                        .tag(Optional(product.id))
+                }
             }
-            .frame(width: 280)
+            .frame(width: 320)
+            .help("Products from \(selectedStoreName)")
         }
         .padding(24)
+    }
+
+    private var filteredProducts: [StoreProduct] {
+        store.selectedProducts.filter { product in
+            !product.platforms.isDisjoint(with: store.platformFilter.platforms)
+        }
+    }
+
+    private var filteredProductIDs: [UUID] {
+        filteredProducts.map(\.id)
+    }
+
+    private var activeProductID: UUID? {
+        if let selectedProductID, filteredProductIDs.contains(selectedProductID) {
+            return selectedProductID
+        }
+        return filteredProductIDs.first
+    }
+
+    private var selectedStoreName: String {
+        switch store.platformFilter {
+        case .both: "connected stores"
+        case .appStore: "App Store"
+        case .playStore: "Google Play"
+        }
+    }
+
+    private var emptyProductsTitle: String {
+        switch store.platformFilter {
+        case .both: "No products"
+        case .appStore: "No App Store products"
+        case .playStore: "No Google Play products"
+        }
+    }
+
+    private var emptyProductsMessage: String {
+        switch store.platformFilter {
+        case .both:
+            "Sync an in-app purchase or subscription to calculate fair regional prices."
+        case .appStore:
+            "Sync an App Store in-app purchase or subscription to calculate fair regional prices."
+        case .playStore:
+            "Sync a Google Play in-app product or subscription to calculate fair regional prices."
+        }
+    }
+
+    private func selectFirstAvailableProductIfNeeded(force: Bool = false) {
+        if force || selectedProductID.map({ !filteredProductIDs.contains($0) }) ?? true {
+            selectedProductID = filteredProductIDs.first
+        }
+    }
+
+    private func productPickerTitle(_ product: StoreProduct) -> String {
+        let platforms = product.platforms.sorted { $0.rawValue < $1.rawValue }
+        let platformLabel = platforms.map(\.shortName).joined(separator: " + ")
+        return platformLabel.isEmpty ? product.name : "\(product.name) · \(platformLabel)"
+    }
+
+    private func productPickerIcon(_ product: StoreProduct) -> String {
+        guard product.platforms.count == 1, let platform = product.platforms.first else {
+            return "rectangle.2.swap"
+        }
+        return platform.icon
     }
 
     private func pricingWorkspace(productID: UUID) -> some View {
@@ -435,7 +509,7 @@ public struct PricingView: View {
 
     private var appleDecreaseConfirmationMessage: String {
         guard let productID = selectedProductID,
-              let product = store.selectedProducts.first(where: { $0.id == productID }) else {
+              let product = filteredProducts.first(where: { $0.id == productID }) else {
             return "App Store Connect does not allow a higher legacy subscription price to be preserved when the new price is lower."
         }
         let count = appStoreDecreaseCount(product)
@@ -447,7 +521,7 @@ public struct PricingView: View {
             proFeature = .applyRegionalPricing
             return
         }
-        guard let productID = selectedProductID ?? store.selectedProducts.first?.id else { return }
+        guard let productID = activeProductID else { return }
         isApplying = true
         Task {
             await store.applyPPP(productID: productID)

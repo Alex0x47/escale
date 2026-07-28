@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 /// Optional actions supplied by a commercial distribution of Escale.
@@ -7,9 +8,14 @@ import SwiftUI
 /// without adding commercial implementation details to the open-source package.
 public struct EscaleCommercialActions: Sendable {
     public let openLicenceManagement: @MainActor @Sendable () -> Void
+    public let promotionCheckoutURL: (@MainActor @Sendable (_ startedAt: Date) async -> URL?)?
 
-    public init(openLicenceManagement: @escaping @MainActor @Sendable () -> Void) {
+    public init(
+        openLicenceManagement: @escaping @MainActor @Sendable () -> Void,
+        promotionCheckoutURL: (@MainActor @Sendable (_ startedAt: Date) async -> URL?)? = nil
+    ) {
         self.openLicenceManagement = openLicenceManagement
+        self.promotionCheckoutURL = promotionCheckoutURL
     }
 }
 

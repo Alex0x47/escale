@@ -611,13 +611,15 @@ public struct SettingsView: View {
                     Spacer()
                     Button("Open setup") { presentedSheet = .setup }
                 }
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Manual app pairing").font(.subheadline.weight(.semibold))
-                        Text("Link records when their identifiers do not match.").font(.caption).foregroundStyle(.secondary)
+                if canPairApps {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Manual app pairing").font(.subheadline.weight(.semibold))
+                            Text("Link records when their identifiers do not match.").font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Pair apps") { presentedSheet = .linker }
                     }
-                    Spacer()
-                    Button("Pair apps") { presentedSheet = .linker }
                 }
                 if store.isDemoMode {
                     Button("Leave demo workspace") { store.leaveDemoMode() }
@@ -654,6 +656,11 @@ public struct SettingsView: View {
                     .frame(width: 560, height: 330)
             }
         }
+    }
+
+    private var canPairApps: Bool {
+        store.workspace.apps.contains(where: { $0.appStoreApp != nil })
+            && store.workspace.apps.contains(where: { $0.playStoreApp != nil })
     }
 
     private var openAISettingsCard: some View {

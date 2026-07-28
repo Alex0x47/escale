@@ -1131,7 +1131,9 @@ private struct StoreCredentialSetupGuide: View {
                 ),
                 CredentialSetupStep(
                     title: "Generate a Team API key",
-                    detail: "In Integrations → Team Keys, click Generate API Key (or +). Give it a recognizable name and select App Manager access. Account Holder or Admin access is required to create it."
+                    detail: "In Integrations → Team Keys, click Generate API Key (or +). Give it a recognizable name and select App Manager access. Account Holder or Admin access is required to create it.",
+                    linkTitle: "Open App Store Connect API keys",
+                    url: URL(string: "https://appstoreconnect.apple.com/access/integrations/api")
                 ),
                 CredentialSetupStep(
                     title: "Save all three credentials",

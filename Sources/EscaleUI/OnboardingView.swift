@@ -802,7 +802,7 @@ private enum SettingsSheet: Identifiable {
     }
 }
 
-private struct StoreConnectionSheet: View {
+struct StoreConnectionSheet: View {
     let platform: StorePlatform
 
     @EnvironmentObject private var store: WorkspaceStore

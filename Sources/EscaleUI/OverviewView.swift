@@ -5,7 +5,7 @@ public struct OverviewView: View {
     public init() {}
 
     @EnvironmentObject private var store: WorkspaceStore
-    @State private var showsAndroidLinker = false
+    @State private var pairingRequest: AppPairingRequest?
 
     private var localizationHealth: String {
         guard !store.selectedLocalizations.isEmpty else { return "—" }
@@ -82,12 +82,9 @@ public struct OverviewView: View {
         }
         .background(Theme.canvas)
         .navigationTitle(store.selectedApp?.name ?? "Overview")
-        .sheet(isPresented: $showsAndroidLinker) {
-            if let appID = store.selectedAppID {
-                AndroidAppLinkView(appStoreAppID: appID)
-                    .environmentObject(store)
-                    .frame(width: 620, height: 520)
-            }
+        .sheet(item: $pairingRequest) { request in
+            AppPairingView(appID: request.appID)
+                .environmentObject(store)
         }
     }
 
@@ -126,15 +123,15 @@ public struct OverviewView: View {
                 }
             }
             Spacer()
-            if app.appStoreApp != nil, app.playStoreApp == nil {
+            if app.linkedCount == 1 {
                 Button {
-                    showsAndroidLinker = true
+                    pairingRequest = AppPairingRequest(appID: app.id)
                 } label: {
-                    Label("Link Android app", systemImage: "link")
+                    Label("Pair app", systemImage: "link")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.large)
-                .help("Pair this iOS app with its Google Play app")
+                .help("Pair this product with its record from the other store")
             }
             Button {
                 store.selectedSection = .listing

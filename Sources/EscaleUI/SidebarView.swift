@@ -12,6 +12,7 @@ public struct SidebarView: View {
     @State private var isProductSelectorHovered = false
     @State private var isAppSelectorPresented = false
     @State private var showsOfficialDownloadPrompt = false
+    @State private var pairingRequest: AppPairingRequest?
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -74,6 +75,40 @@ public struct SidebarView: View {
                             .foregroundStyle(.secondary)
                         if let ios = app.appStoreApp { StoreVersionRow(app: ios) }
                         if let android = app.playStoreApp { StoreVersionRow(app: android) }
+                        if app.linkedCount == 1 {
+                            Button {
+                                pairingRequest = AppPairingRequest(appID: app.id)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "link.badge.plus")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(Theme.accent)
+                                        .frame(width: 30, height: 30)
+                                        .background(Theme.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Pair this app")
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(.primary)
+                                        Text(app.appStoreApp == nil ? "Add its App Store version" : "Add its Google Play version")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption2.weight(.bold))
+                                        .foregroundStyle(Theme.accent)
+                                }
+                                .padding(10)
+                                .background(Theme.accent.opacity(0.045), in: RoundedRectangle(cornerRadius: 11))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 11)
+                                        .stroke(Theme.accent.opacity(0.2))
+                                )
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .help("Pair this product with its record from the other store")
+                        }
                     }
                     .padding(14)
                 }
@@ -141,6 +176,10 @@ public struct SidebarView: View {
         }
         .sheet(isPresented: $showsConnections) {
             SettingsView().environmentObject(store).frame(width: 680, height: 650)
+        }
+        .sheet(item: $pairingRequest) { request in
+            AppPairingView(appID: request.appID)
+                .environmentObject(store)
         }
     }
 

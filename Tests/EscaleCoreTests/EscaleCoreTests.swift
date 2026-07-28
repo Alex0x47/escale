@@ -607,6 +607,77 @@ func openAIFieldTranslationResponse() throws {
     #expect(decoded == "Nouveau cette semaine.")
 }
 
+@Test("Review replies use the selected store app name")
+func reviewReplyUsesSelectedAppName() {
+    let app = UnifiedApp(
+        id: UUID(),
+        name: "Unified fallback",
+        symbol: "app",
+        tintHex: 0,
+        appStoreApp: StoreApp(
+            id: UUID(), platform: .appStore, name: "Correct iOS Name",
+            bundleID: "com.example.ios", storeID: "1", version: "1.0",
+            state: .ready, versionID: nil, appInfoID: nil
+        ),
+        playStoreApp: StoreApp(
+            id: UUID(), platform: .playStore, name: "Correct Android Name",
+            bundleID: "com.example.android", storeID: "com.example.android", version: "1.0",
+            state: .ready, versionID: nil, appInfoID: nil
+        )
+    )
+
+    #expect(reviewReplyAppName(for: app, platform: .appStore) == "Correct iOS Name")
+    #expect(reviewReplyAppName(for: app, platform: .playStore) == "Correct Android Name")
+}
+
+@Test("OpenAI Responses API structured review reply is decoded")
+func openAIReviewReplyResponse() throws {
+    let envelope: [String: Any] = [
+        "status": "completed",
+        "output": [[
+            "type": "message",
+            "content": [[
+                "type": "output_text",
+                "text": #"{"reply":"Thanks for sharing this specific sync issue."}"#
+            ]]
+        ]]
+    ]
+
+    let decoded = try OpenAIClient.decodeReviewReplyResponse(
+        JSONSerialization.data(withJSONObject: envelope)
+    )
+    #expect(decoded == "Thanks for sharing this specific sync issue.")
+}
+
+@Test("Review reply instructions prevent wrong names and invented promises")
+func openAIReviewReplyInstructions() {
+    let instructions = OpenAIClient.reviewReplyInstructions(characterLimit: 350)
+
+    #expect(instructions.contains("The exact product name is app_name"))
+    #expect(instructions.contains("Never mention, infer, or substitute any other app"))
+    #expect(instructions.contains("Do not invent fixes"))
+    #expect(instructions.contains("without promising it will be built"))
+    #expect(instructions.contains("same language as the review"))
+    #expect(instructions.contains("hard maximum of 350 characters"))
+}
+
+@Test("Review replies are normalized and capped without cutting a word")
+func openAIReviewReplyNormalization() {
+    #expect(
+        OpenAIClient.normalizedReviewReply(
+            "  Thank you, Mia!\nWe appreciate the detail.  ",
+            characterLimit: 350
+        ) == "Thank you, Mia! We appreciate the detail."
+    )
+    let capped = OpenAIClient.normalizedReviewReply(
+        "Thank you for the detailed feedback about your daily workflow and the way this feature could help every morning.",
+        characterLimit: 60
+    )
+    #expect(capped.count <= 60)
+    #expect(capped.hasSuffix("…"))
+    #expect(!capped.contains("workf…"))
+}
+
 @Test("Full-listing AI instructions enforce ASO and selected-store limits")
 func openAIListingASOInstructions() {
     let limits = OpenAITranslationLimits.storeListing(platforms: [.appStore, .playStore])

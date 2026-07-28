@@ -193,16 +193,15 @@ private struct ReviewDetail: View {
                 Button {
                     isDrafting = true
                     Task {
-                        try? await Task.sleep(for: .milliseconds(750))
-                        response = review.rating <= 3
-                            ? "Hi \(review.author), thanks for flagging this. We’re sorry the experience fell short. The latest update includes sync improvements—if the issue continues, please contact us so we can help directly."
-                            : "Thank you, \(review.author)! We’re so glad Northstar has become part of your routine. Your thoughtful feedback means a lot to our small team."
+                        if let draft = await store.draftReviewReply(to: review.id) {
+                            response = draft
+                        }
                         isDrafting = false
                     }
                 } label: {
                     if isDrafting { ProgressView().controlSize(.small) } else { Label("Draft with AI", systemImage: "sparkles") }
                 }
-                .buttonStyle(.bordered).disabled(isDrafting)
+                .buttonStyle(.bordered).disabled(isDrafting || isSending)
             }
             TextField("Thank the customer or offer help…", text: $response, axis: .vertical)
                 .textFieldStyle(.plain).lineLimit(5...10)
@@ -222,7 +221,7 @@ private struct ReviewDetail: View {
                 } label: {
                     if isSending { ProgressView().controlSize(.small) } else { Label("Send reply", systemImage: "paperplane.fill") }
                 }
-                .buttonStyle(.borderedProminent).disabled(response.isEmpty || response.count > 350 || isSending)
+                .buttonStyle(.borderedProminent).disabled(response.isEmpty || response.count > 350 || isSending || isDrafting)
             }
         }
         .padding(18)

@@ -625,7 +625,7 @@ public struct SettingsView: View {
                     .cardStyle(cornerRadius: 13)
                 }
                 Divider()
-                SectionTitle("OpenAI", subtitle: "Power translations and future AI tools with your own API key.")
+                SectionTitle("OpenAI", subtitle: "Power translations and customer-review reply drafts with your own API key.")
                 openAISettingsCard
                 Divider()
                 HStack {

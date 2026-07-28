@@ -87,7 +87,7 @@ There is no automatic rollback. Keep a record of the previous state before apply
 - Xcode Command Line Tools
 - [ImageMagick](https://imagemagick.org/) for the recommended `.app` build scripts
 - An App Store Connect account and/or Google Play Console account
-- An OpenAI API key only if AI-assisted translation is required
+- An OpenAI API key only if AI-assisted translation or review-reply drafting is required
 
 Escale has no third-party Swift package dependencies.
 
@@ -234,7 +234,7 @@ AI features are optional and use an API key belonging to the user:
 
 Requests go directly from the Mac to `api.openai.com` over HTTPS. The key is stored in Keychain and is never added to workspace data or logs. API usage is billed by OpenAI to the account owning the key.
 
-AI output can be incorrect, misleading, culturally inappropriate, or too long despite validation attempts. Review every translation before publishing it.
+AI output can be incorrect, misleading, culturally inappropriate, or too long despite validation attempts. Review every translation and reply draft before publishing it.
 
 ## Local data and credentials
 

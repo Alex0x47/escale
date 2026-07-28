@@ -92,6 +92,8 @@ public struct StoreVersionDetails: Codable, Hashable, Sendable {
     public var inAppUpdatePriority: Int? = nil
     public var countryTargeting: StoreCountryTargeting? = nil
     public var releaseNotes: [StoreVersionReleaseNote]? = nil
+    public var bundleSHA1: String? = nil
+    public var bundleSHA256: String? = nil
 
     public init(
         platformName: String? = nil,
@@ -108,7 +110,9 @@ public struct StoreVersionDetails: Codable, Hashable, Sendable {
         userFraction: Double? = nil,
         inAppUpdatePriority: Int? = nil,
         countryTargeting: StoreCountryTargeting? = nil,
-        releaseNotes: [StoreVersionReleaseNote]? = nil
+        releaseNotes: [StoreVersionReleaseNote]? = nil,
+        bundleSHA1: String? = nil,
+        bundleSHA256: String? = nil
     ) {
         self.platformName = platformName
         self.releaseType = releaseType
@@ -125,6 +129,8 @@ public struct StoreVersionDetails: Codable, Hashable, Sendable {
         self.inAppUpdatePriority = inAppUpdatePriority
         self.countryTargeting = countryTargeting
         self.releaseNotes = releaseNotes
+        self.bundleSHA1 = bundleSHA1
+        self.bundleSHA256 = bundleSHA256
     }
 }
 

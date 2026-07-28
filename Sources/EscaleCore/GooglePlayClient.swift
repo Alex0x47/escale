@@ -53,6 +53,15 @@ public struct GooglePriceCalculation: Sendable {
     public let regionsVersion: String
 }
 
+public struct GooglePlayBundleUploadResult: Equatable, Sendable {
+    public let versionCode: Int
+    public let track: String
+    public let releaseName: String
+    public let releaseNotes: [StoreVersionReleaseNote]
+    public let sha1: String?
+    public let sha256: String?
+}
+
 private struct GoogleProductsFetchResult: Sendable {
     let products: [StoreProduct]
     let warnings: [String]
@@ -189,6 +198,82 @@ public struct GooglePlayClient: Sendable {
         }
     }
 
+    public func createDraftRelease(
+        bundleFileURL: URL,
+        packageName: String,
+        track: String,
+        releaseName: String?,
+        releaseNotes: [StoreVersionReleaseNote],
+        progress: StoreFetchProgressHandler? = nil
+    ) async throws -> GooglePlayBundleUploadResult {
+        let cleanTrack = track.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanTrack.isEmpty else {
+            throw APIError.invalidCredentials("Choose a Google Play track for the Android release.")
+        }
+
+        await progress?(StoreFetchProgress(completed: 0, total: 4, detail: "Opening a Google Play edit…"))
+        let editID = try await createEdit(packageName: packageName)
+        do {
+            let trackPath = "/applications/\(encoded(packageName))/edits/\(encoded(editID))/tracks/\(encoded(cleanTrack))"
+            let existingTrack = try await request(path: trackPath).value
+            if googleTrackContainsDraftRelease(existingTrack) {
+                throw APIError.unsupported(
+                    "The \(cleanTrack) track already has a draft release. Finish or remove it in Google Play Console before uploading another bundle."
+                )
+            }
+
+            await progress?(StoreFetchProgress(completed: 1, total: 4, detail: "Uploading the signed Android App Bundle…"))
+            let bundlePath = "/applications/\(encoded(packageName))/edits/\(encoded(editID))/bundles"
+            let uploadedBundle = try await uploadFile(
+                url: uploadBaseURL.appending(path: bundlePath).appendingQueryItems([
+                    URLQueryItem(name: "uploadType", value: "media")
+                ]),
+                fileURL: bundleFileURL,
+                contentType: "application/octet-stream"
+            ).value
+            guard let versionCode = uploadedBundle.int("versionCode") else {
+                throw APIError.invalidResponse
+            }
+
+            await progress?(StoreFetchProgress(completed: 2, total: 4, detail: "Creating a draft release on \(cleanTrack)…"))
+            let payload = googleDraftReleasePayload(
+                track: cleanTrack,
+                versionCode: versionCode,
+                releaseName: releaseName,
+                releaseNotes: releaseNotes
+            )
+            let updatedTrack = try await request(
+                path: trackPath,
+                method: "PUT",
+                body: HTTPTransport.jsonBody(payload)
+            ).value
+
+            await progress?(StoreFetchProgress(completed: 3, total: 4, detail: "Saving the draft without submitting it for review…"))
+            _ = try await request(
+                path: "/applications/\(encoded(packageName))/edits/\(encoded(editID)):commit",
+                query: googleDraftCommitQueryItems(),
+                method: "POST"
+            )
+
+            let returnedRelease = updatedTrack.array("releases").first
+            let cleanReleaseName = releaseName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let resolvedReleaseName = returnedRelease?.string("name")
+                ?? (cleanReleaseName?.isEmpty == false ? cleanReleaseName! : "Build \(versionCode)")
+            await progress?(StoreFetchProgress(completed: 4, total: 4, detail: "Android draft \(versionCode) is ready in Google Play Console."))
+            return GooglePlayBundleUploadResult(
+                versionCode: versionCode,
+                track: cleanTrack,
+                releaseName: resolvedReleaseName,
+                releaseNotes: releaseNotes,
+                sha1: uploadedBundle.string("sha1"),
+                sha256: uploadedBundle.string("sha256")
+            )
+        } catch {
+            try? await deleteEdit(packageName: packageName, editID: editID)
+            throw error
+        }
+    }
+
     public func applyRegionalPrices(
         product: StoreProduct,
         packageName: String,
@@ -310,10 +395,17 @@ public struct GooglePlayClient: Sendable {
         details: StoreVersionDetails
     ) {
         let response = try await request(path: "/applications/\(encoded(packageName))/edits/\(encoded(editID))/tracks").value
+        let bundlesResponse = try? await request(
+            path: "/applications/\(encoded(packageName))/edits/\(encoded(editID))/bundles"
+        ).value
         let tracks = response.array("tracks")
         let production = tracks.first(where: { $0.string("track") == "production" }) ?? tracks.first
         let release = production?.array("releases").first
         let versionCodes = release?.arrayValues("versionCodes").compactMap { $0 as? String } ?? []
+        let selectedVersionCode = versionCodes.first.flatMap(Int.init)
+        let selectedBundle = bundlesResponse?.array("bundles").first {
+            $0.int("versionCode") == selectedVersionCode
+        }
         let status = release?.string("status")
         let state: ReleaseState = switch status {
         case "completed": .ready
@@ -339,7 +431,9 @@ public struct GooglePlayClient: Sendable {
             userFraction: release?.double("userFraction"),
             inAppUpdatePriority: release?.int("inAppUpdatePriority"),
             countryTargeting: countryTargeting,
-            releaseNotes: releaseNotes?.isEmpty == false ? releaseNotes : nil
+            releaseNotes: releaseNotes?.isEmpty == false ? releaseNotes : nil,
+            bundleSHA1: selectedBundle?.string("sha1"),
+            bundleSHA256: selectedBundle?.string("sha256")
         )
         return (versionCodes.first.map { "build \($0)" } ?? "—", state, status, details)
     }
@@ -695,6 +789,24 @@ public struct GooglePlayClient: Sendable {
         return GoogleJSON(value: object)
     }
 
+    private func uploadFile(url: URL, fileURL: URL, contentType: String) async throws -> GoogleJSON {
+        let token = try await GoogleTokenCache.shared.token(for: credentials)
+        let response = try await HTTPTransport.upload(
+            url: url,
+            headers: [
+                "Authorization": "Bearer \(token)",
+                "Accept": "application/json",
+                "Content-Type": contentType
+            ],
+            fileURL: fileURL,
+            timeout: 120
+        )
+        guard let object = try JSONSerialization.jsonObject(with: response.data) as? [String: Any] else {
+            throw APIError.invalidResponse
+        }
+        return GoogleJSON(value: object)
+    }
+
     private func encoded(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? value
     }
@@ -718,6 +830,32 @@ public func googleRequiresAutomaticReviewSubmission(_ error: Error) -> Bool {
         && normalized.contains("changesnotsent")
         && normalized.contains("review")
         && normalized.contains("must not be set")
+}
+
+public func googleDraftReleasePayload(
+    track: String,
+    versionCode: Int,
+    releaseName: String?,
+    releaseNotes: [StoreVersionReleaseNote]
+) -> [String: Any] {
+    var release: [String: Any] = [
+        "versionCodes": [String(versionCode)],
+        "status": "draft"
+    ]
+    if let cleanName = releaseName?.trimmingCharacters(in: .whitespacesAndNewlines),
+       !cleanName.isEmpty {
+        release["name"] = cleanName
+    }
+    if !releaseNotes.isEmpty {
+        release["releaseNotes"] = releaseNotes.map {
+            ["language": $0.language, "text": $0.text]
+        }
+    }
+    return ["track": track, "releases": [release]]
+}
+
+private func googleTrackContainsDraftRelease(_ track: [String: Any]) -> Bool {
+    track.array("releases").contains { $0.string("status") == "draft" }
 }
 
 private extension Dictionary where Key == String, Value == Any {

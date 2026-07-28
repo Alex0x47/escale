@@ -1,0 +1,76 @@
+<svg width="1600" height="1200" viewBox="0 0 1600 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="1200" fill="#FBFAF7"/>
+  <text x="96" y="112" fill="#172033" font-family="Arial, sans-serif" font-size="52" font-weight="700">Escale icon directions</text>
+  <text x="96" y="158" fill="#637083" font-family="Arial, sans-serif" font-size="24">A layover as a useful pause between releases — without looking like a travel app.</text>
+
+  <g transform="translate(96 225)">
+    <rect width="644" height="400" rx="32" fill="white" stroke="#E7E3DC" stroke-width="2"/>
+    <g transform="translate(40 40) scale(.28125)">
+      <rect x="52" y="52" width="920" height="920" rx="218" fill="#7064E8"/>
+      <path d="M270 52H754C874 52 972 150 972 270V343C711 205 376 202 52 373V270C52 150 150 52 270 52Z" fill="white" fill-opacity=".11"/>
+      <rect x="304" y="256" width="72" height="512" rx="36" fill="white"/>
+      <rect x="340" y="256" width="362" height="72" rx="36" fill="white"/>
+      <rect x="340" y="476" width="286" height="72" rx="36" fill="white"/>
+      <rect x="340" y="696" width="362" height="72" rx="36" fill="white"/>
+      <circle cx="340" cy="512" r="80" fill="white"/><circle cx="340" cy="512" r="52" fill="#F27D66"/>
+      <circle cx="702" cy="292" r="29" fill="white"/><circle cx="626" cy="512" r="29" fill="white"/><circle cx="702" cy="732" r="29" fill="white"/>
+    </g>
+    <text x="362" y="90" fill="#172033" font-family="Arial, sans-serif" font-size="28" font-weight="700">01  Route E</text>
+    <text x="362" y="132" fill="#637083" font-family="Arial, sans-serif" font-size="18">A transit-map “E” with the</text>
+    <text x="362" y="158" fill="#637083" font-family="Arial, sans-serif" font-size="18">layover highlighted.</text>
+    <text x="362" y="218" fill="#172033" font-family="Arial, sans-serif" font-size="17" font-weight="700">Best for</text>
+    <text x="362" y="247" fill="#637083" font-family="Arial, sans-serif" font-size="17">Distinctive brand recall</text>
+  </g>
+
+  <g transform="translate(860 225)">
+    <rect width="644" height="400" rx="32" fill="white" stroke="#E7E3DC" stroke-width="2"/>
+    <g transform="translate(40 40) scale(.28125)">
+      <rect x="52" y="52" width="920" height="920" rx="218" fill="#7064E8"/>
+      <path d="M270 52H754C874 52 972 150 972 270V343C711 205 376 202 52 373V270C52 150 150 52 270 52Z" fill="white" fill-opacity=".11"/>
+      <path d="M205 330L245 274L532 484L492 540Z" fill="white"/>
+      <path d="M205 694L245 750L532 540L492 484Z" fill="white"/>
+      <rect x="512" y="478" width="250" height="68" rx="34" fill="white"/>
+      <path d="M730 416L826 512L730 608L682 560L730 512L682 464Z" fill="white"/>
+      <circle cx="512" cy="512" r="94" fill="white"/><circle cx="512" cy="512" r="45" fill="#F27D66"/>
+      <circle cx="225" cy="302" r="34" fill="white"/><circle cx="225" cy="722" r="34" fill="white"/>
+    </g>
+    <text x="362" y="90" fill="#172033" font-family="Arial, sans-serif" font-size="28" font-weight="700">02  Convergence</text>
+    <text x="362" y="132" fill="#637083" font-family="Arial, sans-serif" font-size="18">Two stores, one controlled</text>
+    <text x="362" y="158" fill="#637083" font-family="Arial, sans-serif" font-size="18">stop, then ship.</text>
+    <text x="362" y="218" fill="#172033" font-family="Arial, sans-serif" font-size="17" font-weight="700">Best for</text>
+    <text x="362" y="247" fill="#637083" font-family="Arial, sans-serif" font-size="17">Explaining the product</text>
+  </g>
+
+  <g transform="translate(96 685)">
+    <rect width="644" height="400" rx="32" fill="white" stroke="#E7E3DC" stroke-width="2"/>
+    <g transform="translate(40 40) scale(.28125)">
+      <rect x="52" y="52" width="920" height="920" rx="218" fill="#7064E8"/>
+      <path d="M270 52H754C874 52 972 150 972 270V343C711 205 376 202 52 373V270C52 150 150 52 270 52Z" fill="white" fill-opacity=".11"/>
+      <rect x="190" y="636" width="250" height="128" rx="64" fill="white"/>
+      <rect x="387" y="448" width="250" height="128" rx="64" fill="#F27D66" stroke="white" stroke-width="24"/>
+      <rect x="584" y="260" width="250" height="128" rx="64" fill="white"/>
+      <circle cx="315" cy="700" r="26" fill="#7064E8" fill-opacity=".34"/><circle cx="512" cy="512" r="26" fill="white"/><circle cx="709" cy="324" r="26" fill="#7064E8" fill-opacity=".34"/>
+    </g>
+    <text x="362" y="90" fill="#172033" font-family="Arial, sans-serif" font-size="28" font-weight="700">03  Stepping stones</text>
+    <text x="362" y="132" fill="#637083" font-family="Arial, sans-serif" font-size="18">Each update is one calm,</text>
+    <text x="362" y="158" fill="#637083" font-family="Arial, sans-serif" font-size="18">deliberate stage forward.</text>
+    <text x="362" y="218" fill="#172033" font-family="Arial, sans-serif" font-size="17" font-weight="700">Best for</text>
+    <text x="362" y="247" fill="#637083" font-family="Arial, sans-serif" font-size="17">Warmth and motion</text>
+  </g>
+
+  <g transform="translate(860 685)">
+    <rect width="644" height="400" rx="32" fill="white" stroke="#E7E3DC" stroke-width="2"/>
+    <g transform="translate(40 40) scale(.28125)">
+      <rect x="52" y="52" width="920" height="920" rx="218" fill="#7064E8"/>
+      <path d="M270 52H754C874 52 972 150 972 270V343C711 205 376 202 52 373V270C52 150 150 52 270 52Z" fill="white" fill-opacity=".11"/>
+      <path d="M220 684V472C220 310 351 179 513 179C675 179 806 310 806 472V684H738V472C738 348 637 247 513 247C389 247 288 348 288 472V684Z" fill="white"/>
+      <rect x="220" y="650" width="586" height="68" rx="34" fill="white"/>
+      <circle cx="512" cy="650" r="78" fill="white"/><circle cx="512" cy="650" r="50" fill="#F27D66"/>
+    </g>
+    <text x="362" y="90" fill="#172033" font-family="Arial, sans-serif" font-size="28" font-weight="700">04  Terminal window</text>
+    <text x="362" y="132" fill="#637083" font-family="Arial, sans-serif" font-size="18">A quiet pause point with a</text>
+    <text x="362" y="158" fill="#637083" font-family="Arial, sans-serif" font-size="18">subtle travel association.</text>
+    <text x="362" y="218" fill="#172033" font-family="Arial, sans-serif" font-size="17" font-weight="700">Best for</text>
+    <text x="362" y="247" fill="#637083" font-family="Arial, sans-serif" font-size="17">Emotional brand story</text>
+  </g>
+</svg>

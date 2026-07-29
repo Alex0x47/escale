@@ -8,6 +8,9 @@ xcuserdata/
 .swiftpm/
 dist/
 
+# Separate landing-page repository (not part of this repository)
+escale-landing-page/
+
 # Local environment and logs
 .env
 .env.*
@@ -19,4 +22,3 @@ AuthKey_*.p8
 service-account*.json
 google-service-account*.json
 credentials.json
-

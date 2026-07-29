@@ -252,14 +252,12 @@ struct NewAndroidVersionSheet: View {
         .alert("Download the official Escale app", isPresented: $showsOfficialDownloadPrompt) {
             Button("Not now", role: .cancel) {}
             Button("Open download page") {
-                openURL(Self.downloadPageURL)
+                openURL(EscaleLinks.officialDownloadPage)
             }
         } message: {
             Text("Uploading Google Play bundles is an Escale Pro feature. Download the official app to upgrade; your Community workspace will remain available.")
         }
     }
-
-    private static let downloadPageURL = URL(string: "https://escale.app/")!
 
     private var hasProPlan: Bool {
         store.entitlements.plan == .pro

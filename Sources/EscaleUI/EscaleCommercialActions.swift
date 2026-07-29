@@ -1,6 +1,12 @@
 import Foundation
 import SwiftUI
 
+enum EscaleLinks {
+    static let officialWebsite = URL(string: "https://www.useescale.com/")!
+    static let officialDownloadPage = officialWebsite
+    static let supportPage = URL(string: "https://www.useescale.com/support")!
+}
+
 /// Optional actions supplied by a commercial distribution of Escale.
 ///
 /// The Community app deliberately leaves this environment value unset. A separate

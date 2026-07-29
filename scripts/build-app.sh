@@ -12,6 +12,7 @@ mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources" "$ICONSET"
 swift build --package-path "$PROJECT_ROOT" -c "$BUILD_CONFIGURATION"
 cp "$PROJECT_ROOT/.build/$BUILD_CONFIGURATION/Escale" "$CONTENTS/MacOS/Escale"
 cp "$PROJECT_ROOT/Support/Info.plist" "$CONTENTS/Info.plist"
+"$PROJECT_ROOT/scripts/version.sh" apply-to-plist "$CONTENTS/Info.plist"
 
 RESOURCE_BUNDLE="$PROJECT_ROOT/.build/$BUILD_CONFIGURATION/Escale_EscaleCommunityApp.bundle"
 if [[ -d "$RESOURCE_BUNDLE" ]]; then

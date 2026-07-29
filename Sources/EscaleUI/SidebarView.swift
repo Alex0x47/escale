@@ -183,7 +183,7 @@ public struct SidebarView: View {
         .alert("Download the official Escale app", isPresented: $showsOfficialDownloadPrompt) {
             Button("Not now", role: .cancel) {}
             Button("Open download page") {
-                openURL(Self.downloadPageURL)
+                openURL(EscaleLinks.officialDownloadPage)
             }
         } message: {
             Text("Pro purchases and licence activation are available only in the official Escale download. Your Community workspace will remain available.")
@@ -210,8 +210,6 @@ public struct SidebarView: View {
     }
 
     private static let promotionDuration: TimeInterval = 12 * 60 * 60
-    private static let downloadPageURL = URL(string: "https://escale.app/")!
-
     private var promotionStartedAt: Date {
         guard promotionStartedAtValue > 0 else { return Date() }
         return Date(timeIntervalSince1970: promotionStartedAtValue)

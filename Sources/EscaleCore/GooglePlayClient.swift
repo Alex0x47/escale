@@ -62,6 +62,23 @@ public struct GooglePlayBundleUploadResult: Equatable, Sendable {
     public let sha256: String?
 }
 
+public struct GooglePlayScreenshotUpload: Sendable {
+    public let data: Data
+    public let fileName: String
+    public let mimeType: String
+
+    public init(data: Data, fileName: String, mimeType: String) {
+        self.data = data
+        self.fileName = fileName
+        self.mimeType = mimeType
+    }
+}
+
+public struct GooglePlayScreenshotReference: Sendable {
+    public let id: String
+    public let url: String?
+}
+
 private struct GoogleProductsFetchResult: Sendable {
     let products: [StoreProduct]
     let warnings: [String]
@@ -169,20 +186,45 @@ public struct GooglePlayClient: Sendable {
     ) async throws {
         let editID = try await createEdit(packageName: packageName)
         do {
-            let boundary = "escale-\(UUID().uuidString)"
-            var body = Data()
-            body.appendUTF8("--\(boundary)\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{}\r\n")
-            body.appendUTF8("--\(boundary)\r\nContent-Type: \(mimeType)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(fileName)\"\r\n\r\n")
-            body.append(data)
-            body.appendUTF8("\r\n--\(boundary)--\r\n")
-            let path = "/applications/\(encoded(packageName))/edits/\(encoded(editID))/listings/\(encoded(language))/\(encoded(imageType))"
-            _ = try await request(
-                url: uploadBaseURL.appending(path: path).appendingQueryItems([URLQueryItem(name: "uploadType", value: "multipart")]),
-                method: "POST",
-                additionalHeaders: ["Content-Type": "multipart/related; boundary=\(boundary)"],
-                body: body
+            _ = try await uploadScreenshot(
+                GooglePlayScreenshotUpload(data: data, fileName: fileName, mimeType: mimeType),
+                packageName: packageName,
+                editID: editID,
+                language: language,
+                imageType: imageType
             )
             _ = try await commitEdit(packageName: packageName, editID: editID)
+        } catch {
+            try? await deleteEdit(packageName: packageName, editID: editID)
+            throw error
+        }
+    }
+
+    public func replaceScreenshots(
+        _ screenshots: [GooglePlayScreenshotUpload],
+        packageName: String,
+        language: String,
+        imageType: String
+    ) async throws -> [GooglePlayScreenshotReference] {
+        let editID = try await createEdit(packageName: packageName)
+        do {
+            let galleryPath = "/applications/\(encoded(packageName))/edits/\(encoded(editID))/listings/\(encoded(language))/\(encoded(imageType))"
+            _ = try await request(path: galleryPath, method: "DELETE")
+            var uploaded: [GooglePlayScreenshotReference] = []
+            for screenshot in screenshots {
+                let response = try await uploadScreenshot(
+                    screenshot,
+                    packageName: packageName,
+                    editID: editID,
+                    language: language,
+                    imageType: imageType
+                )
+                let image = response.value.dictionary("image")
+                guard let id = image.string("id") else { throw APIError.invalidResponse }
+                uploaded.append(GooglePlayScreenshotReference(id: id, url: image.string("url")))
+            }
+            _ = try await commitEdit(packageName: packageName, editID: editID)
+            return uploaded
         } catch {
             try? await deleteEdit(packageName: packageName, editID: editID)
             throw error
@@ -198,6 +240,28 @@ public struct GooglePlayClient: Sendable {
             try? await deleteEdit(packageName: packageName, editID: editID)
             throw error
         }
+    }
+
+    private func uploadScreenshot(
+        _ screenshot: GooglePlayScreenshotUpload,
+        packageName: String,
+        editID: String,
+        language: String,
+        imageType: String
+    ) async throws -> GoogleJSON {
+        let boundary = "escale-\(UUID().uuidString)"
+        var body = Data()
+        body.appendUTF8("--\(boundary)\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{}\r\n")
+        body.appendUTF8("--\(boundary)\r\nContent-Type: \(screenshot.mimeType)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(screenshot.fileName)\"\r\n\r\n")
+        body.append(screenshot.data)
+        body.appendUTF8("\r\n--\(boundary)--\r\n")
+        let path = "/applications/\(encoded(packageName))/edits/\(encoded(editID))/listings/\(encoded(language))/\(encoded(imageType))"
+        return try await request(
+            url: uploadBaseURL.appending(path: path).appendingQueryItems([URLQueryItem(name: "uploadType", value: "multipart")]),
+            method: "POST",
+            additionalHeaders: ["Content-Type": "multipart/related; boundary=\(boundary)"],
+            body: body
+        )
     }
 
     public func createDraftRelease(

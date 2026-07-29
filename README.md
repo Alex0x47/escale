@@ -121,10 +121,13 @@ xcode-select --install
 From the repository root:
 
 ```bash
+./scripts/install-git-hooks.sh
 ./scripts/run-app.sh
 ```
 
-This builds a debug `.app`, creates its macOS icon, signs it with the first available Apple Development identity, and opens:
+The one-time hook installation makes each commit increment Escale's patch
+version automatically. The run script builds a debug `.app`, creates its macOS
+icon, signs it with the first available Apple Development identity, and opens:
 
 ```text
 dist/Escale.app
@@ -169,6 +172,32 @@ open dist/Escale.app
 The script builds the executable, creates `AppIcon.icns`, assembles the bundle, and signs it with an available Apple Development identity. It falls back to an ad-hoc signature when necessary.
 
 An Apple Development signature is suitable for local development. Distributing a trusted build to other Macs requires your own Developer ID Application certificate, hardened runtime configuration, and Apple notarization. This repository does not provide a shared signing identity or notarized binary.
+
+## Versioning Escale
+
+Escale's semantic version is stored in the root [`VERSION`](VERSION) file. The
+tracked pre-commit hook increments the patch component for every commit:
+`0.1.1` becomes `0.1.2`, for example. Install the hook once in each clone:
+
+```bash
+./scripts/install-git-hooks.sh
+```
+
+To choose a new major or minor version, edit and stage `VERSION` before
+committing. The hook accepts any valid version higher than the previous one and
+does not add another patch increment to that commit.
+
+`scripts/build-app.sh` writes this semantic version to
+`CFBundleShortVersionString`. It derives the separate `CFBundleVersion` build
+number from the Git commit count. Release automation can override the build
+number with a positive integer:
+
+```bash
+ESCALE_BUILD_NUMBER=42 ./scripts/build-app.sh
+```
+
+Git hooks can be bypassed with `--no-verify`, so code review or CI should reject
+commits that do not advance `VERSION`.
 
 ## Run tests
 

@@ -40,6 +40,7 @@ public enum EscaleAnalyticsScope: String, Sendable {
 public enum EscaleAnalyticsScreenshotOperation: String, Sendable {
     case upload
     case delete
+    case reorder
 }
 
 public enum EscaleCommercialPlan: String, Sendable {

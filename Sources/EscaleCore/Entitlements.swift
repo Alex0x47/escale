@@ -21,6 +21,7 @@ public enum EscaleFeature: String, CaseIterable, Codable, Hashable, Identifiable
     case agencyWorkflows
     case createAppStoreVersion
     case uploadGooglePlayBundle
+    case releaseNoteTemplates
 
     public var id: String { rawValue }
 
@@ -34,6 +35,7 @@ public enum EscaleFeature: String, CaseIterable, Codable, Hashable, Identifiable
         case .agencyWorkflows: "Agency workflows"
         case .createAppStoreVersion: "Create iOS versions"
         case .uploadGooglePlayBundle: "Create Android versions"
+        case .releaseNoteTemplates: "What’s New templates"
         }
     }
 
@@ -55,6 +57,8 @@ public enum EscaleFeature: String, CaseIterable, Codable, Hashable, Identifiable
             "Create a new editable iOS version directly in App Store Connect with Escale Community or Pro."
         case .uploadGooglePlayBundle:
             "Use Escale Pro to upload a signed Android App Bundle and create an editable Google Play draft release."
+        case .releaseNoteTemplates:
+            "Stop rewriting the same release notes. Save your recurring What’s New copy once, then apply it in one click across App Store and Google Play listings with Escale Pro."
         }
     }
 }

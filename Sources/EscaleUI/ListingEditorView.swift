@@ -13,6 +13,7 @@ public struct ListingEditorView: View {
     @State private var translatingFields: Set<ListingMetadataField> = []
     @State private var isTranslatingPlayReleaseNotes = false
     @State private var proFeature: EscaleFeature?
+    @State private var templateManagerRequest: ReleaseNoteTemplateManagerRequest?
 
     public var body: some View {
         HSplitView {
@@ -34,6 +35,10 @@ public struct ListingEditorView: View {
         }
         .sheet(item: $proFeature) { feature in
             ProFeatureSheet(feature: feature)
+        }
+        .sheet(item: $templateManagerRequest) { request in
+            ReleaseNoteTemplateManagerView(initialBody: request.initialBody)
+                .environmentObject(store)
         }
     }
 
@@ -283,6 +288,12 @@ public struct ListingEditorView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
+                releaseNoteTemplateControl(
+                    currentText: note.wrappedValue,
+                    targetLimit: googlePlayReleaseNoteCharacterLimit
+                ) { template in
+                    store.applyReleaseNoteTemplate(id: template.id, toGooglePlayLocale: locale)
+                }
                 Button {
                     guard !sourceLocale.isEmpty else { return }
                     if isPrimary, !store.hasAccess(to: .bulkTranslations) {
@@ -411,6 +422,11 @@ public struct ListingEditorView: View {
             HStack {
                 Text(focus.displayName.uppercased()).font(.caption2.weight(.bold)).tracking(0.65).foregroundStyle(.secondary)
                 Spacer()
+                if focus == .releaseNotes {
+                    releaseNoteTemplateControl(currentText: text.wrappedValue, targetLimit: limit) { template in
+                        store.applyReleaseNoteTemplate(id: template.id, toLocalization: localization.id)
+                    }
+                }
                 fieldTranslationButton(focus, localization: localization)
                 Text("\(text.wrappedValue.count) / \(limit)").font(.caption.monospacedDigit()).foregroundStyle(text.wrappedValue.count > limit ? .red : .secondary)
             }
@@ -422,6 +438,78 @@ public struct ListingEditorView: View {
                 .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(selectedField == focus ? Theme.accent.opacity(0.55) : Theme.border))
                 .onTapGesture { selectedField = focus }
+        }
+    }
+
+    @ViewBuilder
+    private func releaseNoteTemplateControl(
+        currentText: String,
+        targetLimit: Int,
+        apply: @escaping (ReleaseNoteTemplate) -> Void
+    ) -> some View {
+        if store.hasAccess(to: .releaseNoteTemplates) {
+            Menu {
+                if store.releaseNoteTemplates.isEmpty {
+                    Button {
+                        templateManagerRequest = ReleaseNoteTemplateManagerRequest(initialBody: currentText)
+                    } label: {
+                        Label("Create your first template…", systemImage: "plus")
+                    }
+                } else {
+                    Section("Apply a template") {
+                        ForEach(store.releaseNoteTemplates) { template in
+                            Button {
+                                apply(template)
+                            } label: {
+                                Label {
+                                    Text(
+                                        template.body.count <= targetLimit
+                                            ? template.name
+                                            : "\(template.name) · Too long"
+                                    )
+                                } icon: {
+                                    Image(systemName: "doc.text")
+                                }
+                            }
+                            .disabled(template.body.count > targetLimit)
+                        }
+                    }
+                    Divider()
+                    Button {
+                        templateManagerRequest = ReleaseNoteTemplateManagerRequest(initialBody: currentText)
+                    } label: {
+                        Label("Save current text as template…", systemImage: "plus.square.on.square")
+                    }
+                    .disabled(currentText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button {
+                        templateManagerRequest = ReleaseNoteTemplateManagerRequest(initialBody: nil)
+                    } label: {
+                        Label("Manage templates…", systemImage: "slider.horizontal.3")
+                    }
+                }
+            } label: {
+                Label(
+                    store.releaseNoteTemplates.isEmpty ? "Create template" : "Templates",
+                    systemImage: "doc.on.doc.fill"
+                )
+            }
+            .font(.caption2.weight(.semibold))
+            .buttonStyle(.bordered)
+            .controlSize(.mini)
+            .tint(Theme.accent)
+            .help("Apply reusable What’s New copy or manage your Escale Pro templates.")
+        } else {
+            Button {
+                store.track(.proGateViewed(feature: .releaseNoteTemplates))
+                proFeature = .releaseNoteTemplates
+            } label: {
+                Label("Templates · Pro", systemImage: "lock.fill")
+            }
+            .font(.caption2.weight(.semibold))
+            .buttonStyle(.bordered)
+            .controlSize(.mini)
+            .tint(Theme.accent)
+            .help("Upgrade to Pro to save and reuse What’s New templates across apps and locales.")
         }
     }
 
@@ -530,5 +618,361 @@ public struct ListingEditorView: View {
             }
         }
         .background(Color.primary.opacity(0.025))
+    }
+}
+
+private struct ReleaseNoteTemplateManagerRequest: Identifiable {
+    let id = UUID()
+    let initialBody: String?
+}
+
+private struct ReleaseNoteTemplateManagerView: View {
+    @EnvironmentObject private var store: WorkspaceStore
+    @Environment(\.dismiss) private var dismiss
+
+    let initialBody: String?
+
+    @State private var selectedTemplateID: UUID?
+    @State private var isCreating = false
+    @State private var name = ""
+    @State private var templateBody = ""
+    @State private var templatePendingDeletion: ReleaseNoteTemplate?
+
+    private var selectedTemplate: ReleaseNoteTemplate? {
+        selectedTemplateID.flatMap { id in
+            store.releaseNoteTemplates.first(where: { $0.id == id })
+        }
+    }
+
+    private var validationIssue: String? {
+        releaseNoteTemplateValidationIssue(name: name, body: templateBody)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            Divider()
+            HSplitView {
+                templateList
+                    .frame(minWidth: 220, idealWidth: 240, maxWidth: 270)
+                templateEditor
+                    .frame(minWidth: 440)
+            }
+            Divider()
+            footer
+        }
+        .frame(width: 760, height: 560)
+        .background(Theme.canvas)
+        .onAppear {
+            if let initialBody {
+                beginNewTemplate(body: initialBody)
+            } else if let first = store.releaseNoteTemplates.first {
+                select(first)
+            } else {
+                beginNewTemplate(body: "")
+            }
+        }
+        .alert(
+            "Delete this template?",
+            isPresented: Binding(
+                get: { templatePendingDeletion != nil },
+                set: { if !$0 { templatePendingDeletion = nil } }
+            ),
+            presenting: templatePendingDeletion
+        ) { template in
+            Button("Cancel", role: .cancel) {}
+            Button("Delete “\(template.name)”", role: .destructive) {
+                guard store.deleteReleaseNoteTemplate(id: template.id) else { return }
+                templatePendingDeletion = nil
+                if let next = store.releaseNoteTemplates.first {
+                    select(next)
+                } else {
+                    beginNewTemplate(body: "")
+                }
+            }
+        } message: { _ in
+            Text("Listings that already use this text will not change.")
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "doc.on.doc.fill")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 44, height: 44)
+                .background(Theme.accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            VStack(alignment: .leading, spacing: 3) {
+                Text("What’s New templates")
+                    .font(.title2.weight(.bold))
+                Text("Write recurring release notes once, then reuse them across apps and locales.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Text("ESCALE PRO")
+                .font(.caption2.weight(.bold))
+                .tracking(0.7)
+                .foregroundStyle(Theme.accent)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Theme.accent.opacity(0.1), in: Capsule())
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .frame(width: 28, height: 28)
+                    .background(Color.primary.opacity(0.06), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
+            .help("Close")
+            .accessibilityLabel("Close")
+        }
+        .padding(20)
+        .background(Theme.card.opacity(0.7))
+    }
+
+    private var templateList: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("TEMPLATES")
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.7)
+                        .foregroundStyle(.secondary)
+                    Text("\(store.releaseNoteTemplates.count) saved")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button {
+                    beginNewTemplate(body: "")
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("New template")
+            }
+            .padding(14)
+            Divider()
+            ScrollView {
+                LazyVStack(spacing: 5) {
+                    if isCreating {
+                        templateListRow(
+                            name: name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? "New template"
+                                : name,
+                            body: templateBody,
+                            selected: true
+                        )
+                    }
+                    ForEach(store.releaseNoteTemplates) { template in
+                        Button {
+                            select(template)
+                        } label: {
+                            templateListRow(
+                                name: template.name,
+                                body: template.body,
+                                selected: !isCreating && selectedTemplateID == template.id
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if store.releaseNoteTemplates.isEmpty, !isCreating {
+                        Text("No templates yet")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 24)
+                    }
+                }
+                .padding(8)
+            }
+        }
+        .background(Theme.sidebar.opacity(0.72))
+    }
+
+    private func templateListRow(
+        name: String,
+        body: String,
+        selected: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Image(systemName: "doc.text.fill")
+                    .font(.caption)
+                    .foregroundStyle(selected ? Theme.accent : .secondary)
+                Text(name)
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+                Spacer()
+            }
+            Text(templatePreview(body))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(
+            selected ? Theme.accent.opacity(0.11) : Color.clear,
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .contentShape(Rectangle())
+    }
+
+    private var templateEditor: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(isCreating ? "NEW TEMPLATE" : "EDIT TEMPLATE")
+                    .font(.caption2.weight(.bold))
+                    .tracking(0.7)
+                    .foregroundStyle(.secondary)
+                TextField("Template name", text: $name)
+                    .textFieldStyle(.roundedBorder)
+                HStack {
+                    Text("Use a memorable name, such as “Maintenance update”.")
+                    Spacer()
+                    Text("\(name.count) / \(releaseNoteTemplateNameCharacterLimit)")
+                        .monospacedDigit()
+                        .foregroundStyle(
+                            name.count > releaseNoteTemplateNameCharacterLimit ? Color.red : Color.secondary
+                        )
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 7) {
+                HStack {
+                    Text("RELEASE NOTES")
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.7)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if templateBody.count <= googlePlayReleaseNoteCharacterLimit {
+                        Label("Apple + Google Play", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    } else {
+                        Label("App Store only", systemImage: "apple.logo")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .font(.caption2.weight(.semibold))
+
+                TextEditor(text: $templateBody)
+                    .font(.body)
+                    .scrollContentBackground(.hidden)
+                    .padding(10)
+                    .frame(maxHeight: .infinity)
+                    .background(
+                        Color.primary.opacity(0.045),
+                        in: RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .stroke(
+                                templateBody.count > releaseNoteTemplateBodyCharacterLimit
+                                    ? Color.red.opacity(0.7)
+                                    : Theme.border
+                            )
+                    )
+
+                HStack(alignment: .firstTextBaseline) {
+                    Text(
+                        templateBody.count <= googlePlayReleaseNoteCharacterLimit
+                            ? "Ready for both stores."
+                            : "Google Play allows \(googlePlayReleaseNoteCharacterLimit) characters; this template remains available for the App Store."
+                    )
+                    Spacer()
+                    Text("\(templateBody.count) / \(releaseNoteTemplateBodyCharacterLimit.formatted())")
+                        .monospacedDigit()
+                        .foregroundStyle(
+                            templateBody.count > releaseNoteTemplateBodyCharacterLimit ? Color.red : Color.secondary
+                        )
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+            .frame(maxHeight: .infinity)
+
+            if let validationIssue {
+                Label(validationIssue, systemImage: "exclamationmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else {
+                Label(
+                    "Templates fill the field locally. You still review and save the listing yourself.",
+                    systemImage: "checkmark.shield.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .padding(20)
+        .background(Theme.canvas)
+    }
+
+    private var footer: some View {
+        HStack {
+            if !isCreating, let selectedTemplate {
+                Button("Delete", role: .destructive) {
+                    templatePendingDeletion = selectedTemplate
+                }
+            }
+            Spacer()
+            Button("Close") {
+                dismiss()
+            }
+            Button(isCreating ? "Save template" : "Save changes") {
+                save()
+            }
+            .buttonStyle(.borderedProminent)
+            .keyboardShortcut(.defaultAction)
+            .disabled(validationIssue != nil)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .background(Theme.card.opacity(0.75))
+    }
+
+    private func beginNewTemplate(body: String) {
+        selectedTemplateID = nil
+        isCreating = true
+        name = ""
+        templateBody = body
+    }
+
+    private func select(_ template: ReleaseNoteTemplate) {
+        selectedTemplateID = template.id
+        isCreating = false
+        name = template.name
+        templateBody = template.body
+    }
+
+    private func save() {
+        if isCreating {
+            guard let id = store.createReleaseNoteTemplate(name: name, body: templateBody),
+                  let template = store.releaseNoteTemplates.first(where: { $0.id == id }) else {
+                return
+            }
+            select(template)
+        } else if let selectedTemplateID,
+                  store.updateReleaseNoteTemplate(id: selectedTemplateID, name: name, body: templateBody),
+                  let template = store.releaseNoteTemplates.first(where: { $0.id == selectedTemplateID }) {
+            select(template)
+        }
+    }
+
+    private func templatePreview(_ body: String) -> String {
+        let preview = body
+            .split(whereSeparator: \.isNewline)
+            .map(String.init)
+            .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty })
+        return preview ?? "Add reusable release notes"
     }
 }

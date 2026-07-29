@@ -20,6 +20,7 @@ The Community edition must remain a complete manual store-management workflow. E
 | --- | --- |
 | Apply reviewed PPP prices to connected stores | `applyRegionalPricing` |
 | Translate fields or release notes across all locales in the selected app | `bulkTranslations` |
+| Save and reuse What’s New templates across apps and locales | `releaseNoteTemplates` |
 | Connect and switch between multiple developer accounts | `multipleDeveloperAccounts` |
 | Retain pricing history and an operational audit log | `pricingHistoryAndAuditLog` |
 | Schedule synchronization and automated operations | `scheduledSynchronizationAndAutomation` |

@@ -4,6 +4,7 @@ import SwiftUI
 public struct ProFeatureSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.escaleCommercialActions) private var commercialActions
+    @Environment(\.openURL) private var openURL
 
     private let feature: EscaleFeature
 
@@ -73,6 +74,15 @@ public struct ProFeatureSheet: View {
                     Button("Unlock Escale Pro") {
                         dismiss()
                         commercialActions.openLicenceManagement()
+                    }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                } else {
+                    Button {
+                        dismiss()
+                        openURL(EscaleLinks.officialDownloadPage)
+                    } label: {
+                        Label("Download Escale Pro", systemImage: "arrow.down.circle.fill")
                     }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(.borderedProminent)

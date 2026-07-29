@@ -33,7 +33,8 @@ func extensibleProEntitlements() {
             .applyRegionalPricing,
             .bulkTranslations,
             .createAppStoreVersion,
-            .uploadGooglePlayBundle
+            .uploadGooglePlayBundle,
+            .releaseNoteTemplates
         ]
     )
 
@@ -42,7 +43,19 @@ func extensibleProEntitlements() {
     #expect(entitlements.hasAccess(to: .bulkTranslations))
     #expect(entitlements.hasAccess(to: .createAppStoreVersion))
     #expect(entitlements.hasAccess(to: .uploadGooglePlayBundle))
+    #expect(entitlements.hasAccess(to: .releaseNoteTemplates))
     #expect(!entitlements.hasAccess(to: .multipleDeveloperAccounts))
+}
+
+@Test("Community cannot mutate What’s New templates")
+@MainActor
+func communityReleaseNoteTemplateGate() {
+    let store = WorkspaceStore(entitlements: CommunityEntitlements())
+    let originalTemplates = store.workspace.releaseNoteTemplates
+
+    #expect(store.createReleaseNoteTemplate(name: "Maintenance", body: "Bug fixes.") == nil)
+    #expect(store.workspace.releaseNoteTemplates == originalTemplates)
+    #expect(store.toast?.title == "Escale Pro required")
 }
 
 @Test("A hard reset targets every Escale-owned Keychain item")
@@ -225,6 +238,185 @@ func listingMetadataFieldAccess() {
     #expect(ListingMetadataField.releaseNotes.value(in: localization) == "A focused update.")
     #expect(ListingMetadataField.subtitle.characterLimit(in: ListingMetadataLimits(platforms: [.appStore])) == 30)
     #expect(ListingMetadataField.subtitle.characterLimit(in: ListingMetadataLimits(platforms: [.playStore])) == 80)
+}
+
+@Test("What’s New templates validate reusable names and copy")
+func releaseNoteTemplateValidation() {
+    #expect(releaseNoteTemplateValidationIssue(name: "", body: "Bug fixes.") == "Give the template a name.")
+    #expect(releaseNoteTemplateValidationIssue(name: "Maintenance", body: "  ") == "Add the release notes you want to reuse.")
+    #expect(releaseNoteTemplateValidationIssue(name: "Maintenance", body: "Bug fixes and improvements.") == nil)
+    #expect(
+        releaseNoteTemplateValidationIssue(
+            name: String(repeating: "a", count: releaseNoteTemplateNameCharacterLimit + 1),
+            body: "Bug fixes."
+        ) != nil
+    )
+    #expect(
+        releaseNoteTemplateValidationIssue(
+            name: "Long update",
+            body: String(repeating: "a", count: releaseNoteTemplateBodyCharacterLimit + 1)
+        ) != nil
+    )
+}
+
+@Test("What’s New templates persist with the workspace while legacy workspaces remain decodable")
+func releaseNoteTemplatePersistence() throws {
+    let template = ReleaseNoteTemplate(
+        id: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+        name: "Maintenance update",
+        body: "Bug fixes and performance improvements.",
+        createdAt: Date(timeIntervalSince1970: 100),
+        updatedAt: Date(timeIntervalSince1970: 200)
+    )
+    var workspace = Workspace.empty
+    workspace.releaseNoteTemplates = [template]
+
+    let decoded = try JSONDecoder().decode(
+        Workspace.self,
+        from: JSONEncoder().encode(workspace)
+    )
+    #expect(decoded.releaseNoteTemplates == [template])
+
+    let emptyWorkspaceData = try JSONEncoder().encode(Workspace.empty)
+    var legacyObject = try #require(
+        JSONSerialization.jsonObject(with: emptyWorkspaceData) as? [String: Any]
+    )
+    legacyObject.removeValue(forKey: "releaseNoteTemplates")
+    let legacyData = try JSONSerialization.data(withJSONObject: legacyObject)
+    let legacyWorkspace = try JSONDecoder().decode(Workspace.self, from: legacyData)
+    #expect(legacyWorkspace.releaseNoteTemplates == nil)
+}
+
+@Test("Screenshot reordering changes only the selected remote gallery")
+func screenshotGalleryReordering() throws {
+    let firstID = UUID(uuidString: "10000000-0000-0000-0000-000000000001")!
+    let secondID = UUID(uuidString: "10000000-0000-0000-0000-000000000002")!
+    let thirdID = UUID(uuidString: "10000000-0000-0000-0000-000000000003")!
+    let googleID = UUID(uuidString: "20000000-0000-0000-0000-000000000001")!
+    func screenshot(
+        id: UUID,
+        platform: StorePlatform,
+        setID: String
+    ) -> StoreScreenshot {
+        StoreScreenshot(
+            id: id,
+            platform: platform,
+            locale: "en-US",
+            device: "Phone",
+            title: id.uuidString,
+            caption: "",
+            gradientStartHex: 0,
+            gradientEndHex: 0,
+            remoteID: id.uuidString,
+            remoteURL: nil,
+            screenshotSetID: setID
+        )
+    }
+    let screenshots = [
+        screenshot(id: firstID, platform: .appStore, setID: "apple-phone"),
+        screenshot(id: googleID, platform: .playStore, setID: "phoneScreenshots"),
+        screenshot(id: secondID, platform: .appStore, setID: "apple-phone"),
+        screenshot(id: thirdID, platform: .appStore, setID: "apple-phone")
+    ]
+
+    let reordered = try #require(
+        screenshotsByMoving(screenshots, screenshotID: thirdID, before: firstID)
+    )
+    #expect(reordered.map(\.id) == [thirdID, googleID, firstID, secondID])
+    #expect(
+        screenshotsByMoving(screenshots, screenshotID: firstID, before: googleID) == nil
+    )
+
+    let movedToEnd = try #require(
+        screenshotsByMoving(reordered, screenshotID: thirdID, before: nil)
+    )
+    #expect(movedToEnd.map(\.id) == [firstID, googleID, secondID, thirdID])
+}
+
+@Test("Screenshot preflight validation follows each store's required dimensions")
+func screenshotUploadValidation() {
+    let appStorePhone = ScreenshotImageProperties(
+        width: 1_290,
+        height: 2_796,
+        fileSize: 2_000_000,
+        hasAlpha: false
+    )
+    #expect(
+        screenshotUploadValidationIssue(
+            properties: appStorePhone,
+            platform: .appStore,
+            device: "Phone"
+        ) == nil
+    )
+    #expect(
+        appStoreScreenshotDisplayType(width: 2_796, height: 1_290, device: "Phone")
+            == "APP_IPHONE_67"
+    )
+    #expect(
+        appStoreScreenshotDisplayType(width: 1_280, height: 800, device: "Desktop")
+            == "APP_DESKTOP"
+    )
+    #expect(
+        appStoreScreenshotDisplayType(width: 800, height: 1_280, device: "Desktop")
+            == nil
+    )
+    #expect(
+        screenshotUploadValidationIssue(
+            properties: appStorePhone,
+            platform: .appStore,
+            device: "Tablet"
+        ) != nil
+    )
+
+    let googlePortrait = ScreenshotImageProperties(
+        width: 1_080,
+        height: 1_920,
+        fileSize: 2_000_000,
+        hasAlpha: false
+    )
+    #expect(
+        screenshotUploadValidationIssue(
+            properties: googlePortrait,
+            platform: .playStore,
+            device: "Phone"
+        ) == nil
+    )
+    #expect(
+        screenshotUploadValidationIssue(
+            properties: ScreenshotImageProperties(
+                width: 300,
+                height: 600,
+                fileSize: 100_000,
+                hasAlpha: false
+            ),
+            platform: .playStore,
+            device: "Phone"
+        ) != nil
+    )
+    #expect(
+        screenshotUploadValidationIssue(
+            properties: ScreenshotImageProperties(
+                width: 1_000,
+                height: 2_001,
+                fileSize: 100_000,
+                hasAlpha: false
+            ),
+            platform: .playStore,
+            device: "Phone"
+        ) != nil
+    )
+    #expect(
+        screenshotUploadValidationIssue(
+            properties: ScreenshotImageProperties(
+                width: 1_080,
+                height: 1_920,
+                fileSize: 100_000,
+                hasAlpha: true
+            ),
+            platform: .playStore,
+            device: "Phone"
+        ) != nil
+    )
 }
 
 @Test("Apple and Google listing copy remain independently editable")

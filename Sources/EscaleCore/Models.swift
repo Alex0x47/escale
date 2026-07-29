@@ -242,6 +242,49 @@ public struct ListingLocalization: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+public struct ReleaseNoteTemplate: Identifiable, Codable, Hashable, Sendable {
+    public let id: UUID
+    public var name: String
+    public var body: String
+    public let createdAt: Date
+    public var updatedAt: Date
+
+    public init(
+        id: UUID = UUID(),
+        name: String,
+        body: String,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.name = name
+        self.body = body
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+public let releaseNoteTemplateNameCharacterLimit = 60
+public let releaseNoteTemplateBodyCharacterLimit = 4_000
+
+public func releaseNoteTemplateValidationIssue(name: String, body: String) -> String? {
+    let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleanBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+    if cleanName.isEmpty {
+        return "Give the template a name."
+    }
+    if cleanName.count > releaseNoteTemplateNameCharacterLimit {
+        return "Template names can contain up to \(releaseNoteTemplateNameCharacterLimit) characters."
+    }
+    if cleanBody.isEmpty {
+        return "Add the release notes you want to reuse."
+    }
+    if body.count > releaseNoteTemplateBodyCharacterLimit {
+        return "Templates can contain up to \(releaseNoteTemplateBodyCharacterLimit.formatted()) characters."
+    }
+    return nil
+}
+
 public enum ListingMetadataField: String, CaseIterable, Identifiable, Sendable {
     case title
     case subtitle
@@ -320,6 +363,169 @@ public struct StoreScreenshot: Identifiable, Codable, Hashable, Sendable {
     public var remoteID: String?
     public var remoteURL: String?
     public var screenshotSetID: String?
+}
+
+public func screenshotsShareGallery(_ lhs: StoreScreenshot, _ rhs: StoreScreenshot) -> Bool {
+    guard lhs.platform == rhs.platform,
+          canonicalStoreLocale(lhs.locale) == canonicalStoreLocale(rhs.locale) else {
+        return false
+    }
+    if lhs.screenshotSetID != nil || rhs.screenshotSetID != nil {
+        return lhs.screenshotSetID == rhs.screenshotSetID
+    }
+    return lhs.device.caseInsensitiveCompare(rhs.device) == .orderedSame
+}
+
+public func screenshotsByMoving(
+    _ screenshots: [StoreScreenshot],
+    screenshotID: UUID,
+    before destinationID: UUID?
+) -> [StoreScreenshot]? {
+    guard let source = screenshots.first(where: { $0.id == screenshotID }) else {
+        return nil
+    }
+    let galleryIndices = screenshots.indices.filter {
+        screenshotsShareGallery(screenshots[$0], source)
+    }
+    guard galleryIndices.count > 1 else { return nil }
+
+    var gallery = galleryIndices.map { screenshots[$0] }
+    guard let sourceIndex = gallery.firstIndex(where: { $0.id == screenshotID }) else {
+        return nil
+    }
+    let moved = gallery.remove(at: sourceIndex)
+    if let destinationID {
+        guard let destinationIndex = gallery.firstIndex(where: { $0.id == destinationID }) else {
+            return nil
+        }
+        gallery.insert(moved, at: destinationIndex)
+    } else {
+        gallery.append(moved)
+    }
+    guard galleryIndices.map({ screenshots[$0].id }) != gallery.map(\.id) else {
+        return nil
+    }
+
+    var result = screenshots
+    for (index, screenshot) in zip(galleryIndices, gallery) {
+        result[index] = screenshot
+    }
+    return result
+}
+
+public struct ScreenshotImageProperties: Equatable, Sendable {
+    public let width: Int
+    public let height: Int
+    public let fileSize: Int
+    public let hasAlpha: Bool
+
+    public init(width: Int, height: Int, fileSize: Int, hasAlpha: Bool) {
+        self.width = width
+        self.height = height
+        self.fileSize = fileSize
+        self.hasAlpha = hasAlpha
+    }
+}
+
+public func screenshotUploadValidationIssue(
+    properties: ScreenshotImageProperties,
+    platform: StorePlatform,
+    device: String
+) -> String? {
+    guard properties.width > 0, properties.height > 0 else {
+        return "The image dimensions could not be read."
+    }
+    guard !properties.hasAlpha else {
+        return "\(platform.rawValue) screenshots cannot contain transparency or an alpha channel."
+    }
+
+    switch platform {
+    case .appStore:
+        guard appStoreScreenshotDisplayType(
+            width: properties.width,
+            height: properties.height,
+            device: device
+        ) != nil else {
+            return "The \(properties.width) × \(properties.height) image is not an accepted App Store \(device.lowercased()) screenshot size."
+        }
+    case .playStore:
+        let shortestSide = min(properties.width, properties.height)
+        let longestSide = max(properties.width, properties.height)
+        guard shortestSide >= 320 else {
+            return "Google Play screenshots must be at least 320 px on their shortest side."
+        }
+        guard longestSide <= 3_840 else {
+            return "Google Play screenshots cannot exceed 3,840 px on their longest side."
+        }
+        guard longestSide <= shortestSide * 2 else {
+            return "Google Play requires the longest side to be no more than twice the shortest side."
+        }
+    }
+    return nil
+}
+
+public func appStoreScreenshotDisplayType(width: Int, height: Int, device: String) -> String? {
+    if ["Desktop", "TV"].contains(device), width <= height {
+        return nil
+    }
+    let size = ScreenshotPixelSize(width, height)
+    let accepted: [(type: String, devices: Set<String>, sizes: Set<ScreenshotPixelSize>)] = [
+        ("APP_IPHONE_67", ["Phone"], [
+            ScreenshotPixelSize(1_260, 2_736), ScreenshotPixelSize(1_290, 2_796),
+            ScreenshotPixelSize(1_320, 2_868)
+        ]),
+        ("APP_IPHONE_65", ["Phone"], [
+            ScreenshotPixelSize(1_284, 2_778), ScreenshotPixelSize(1_242, 2_688)
+        ]),
+        ("APP_IPHONE_61", ["Phone"], [
+            ScreenshotPixelSize(1_179, 2_556), ScreenshotPixelSize(1_206, 2_622),
+            ScreenshotPixelSize(1_170, 2_532), ScreenshotPixelSize(1_080, 2_340)
+        ]),
+        ("APP_IPHONE_58", ["Phone"], [ScreenshotPixelSize(1_125, 2_436)]),
+        ("APP_IPHONE_55", ["Phone"], [ScreenshotPixelSize(1_242, 2_208)]),
+        ("APP_IPHONE_47", ["Phone"], [ScreenshotPixelSize(750, 1_334)]),
+        ("APP_IPHONE_40", ["Phone"], [
+            ScreenshotPixelSize(640, 1_096), ScreenshotPixelSize(640, 1_136),
+            ScreenshotPixelSize(600, 1_136)
+        ]),
+        ("APP_IPHONE_35", ["Phone"], [
+            ScreenshotPixelSize(640, 920), ScreenshotPixelSize(640, 960),
+            ScreenshotPixelSize(600, 960)
+        ]),
+        ("APP_IPAD_PRO_3GEN_129", ["Tablet"], [
+            ScreenshotPixelSize(2_064, 2_752), ScreenshotPixelSize(2_048, 2_732)
+        ]),
+        ("APP_IPAD_PRO_3GEN_11", ["Tablet"], [
+            ScreenshotPixelSize(1_488, 2_266), ScreenshotPixelSize(1_668, 2_420),
+            ScreenshotPixelSize(1_668, 2_388), ScreenshotPixelSize(1_640, 2_360)
+        ]),
+        ("APP_IPAD_105", ["Tablet"], [ScreenshotPixelSize(1_668, 2_224)]),
+        ("APP_IPAD_97", ["Tablet"], [
+            ScreenshotPixelSize(1_536, 2_008), ScreenshotPixelSize(1_536, 2_048),
+            ScreenshotPixelSize(1_496, 2_048), ScreenshotPixelSize(768, 1_004),
+            ScreenshotPixelSize(768, 1_024), ScreenshotPixelSize(748, 1_024)
+        ]),
+        ("APP_DESKTOP", ["Desktop"], [
+            ScreenshotPixelSize(1_280, 800), ScreenshotPixelSize(1_440, 900),
+            ScreenshotPixelSize(2_560, 1_600), ScreenshotPixelSize(2_880, 1_800)
+        ]),
+        ("APP_APPLE_TV", ["TV"], [
+            ScreenshotPixelSize(1_920, 1_080), ScreenshotPixelSize(3_840, 2_160)
+        ])
+    ]
+    return accepted.first {
+        $0.devices.contains(device) && $0.sizes.contains(size)
+    }?.type
+}
+
+private struct ScreenshotPixelSize: Hashable {
+    let shortSide: Int
+    let longSide: Int
+
+    init(_ width: Int, _ height: Int) {
+        shortSide = min(width, height)
+        longSide = max(width, height)
+    }
 }
 
 public struct PriceRegion: Identifiable, Codable, Hashable, Sendable {
@@ -448,6 +654,7 @@ public struct Workspace: Codable, Sendable {
     public var productsByApp: [UUID: [StoreProduct]]
     public var reviewsByApp: [UUID: [CustomerReview]]
     public var googlePlayReleaseNotesByApp: [UUID: String]? = nil
+    public var releaseNoteTemplates: [ReleaseNoteTemplate]? = nil
 }
 
 extension Workspace {

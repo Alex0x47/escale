@@ -518,6 +518,8 @@ public struct SettingsView: View {
     @State private var openAIStatusIsError = false
     @State private var platformPendingDisconnect: StorePlatform?
     @State private var confirmsDataReset = false
+    @AppStorage(EscalePreferences.preferredPricingIndexKey)
+    private var preferredPricingIndexValue = PricingIndex.worldwidePPP.rawValue
 
     public var body: some View {
         ScrollView {
@@ -549,6 +551,17 @@ public struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(store.entitlements.plan.displayName)
                             .font(.subheadline.weight(.semibold))
+                        if store.entitlements.plan == .community, commercialActions == nil {
+                            Link(destination: EscaleLinks.officialDownloadPage) {
+                                Label(
+                                    "Download the official, up-to-date app",
+                                    systemImage: "arrow.down.circle.fill"
+                                )
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .padding(.vertical, 5)
+                        }
                         Text(
                             store.entitlements.plan == .pro
                                 ? "Pro capabilities are unlocked."
@@ -563,6 +576,38 @@ public struct SettingsView: View {
                             commercialActions.openLicenceManagement()
                         }
                     }
+                }
+                .padding(14)
+                .cardStyle(cornerRadius: 13)
+                Divider()
+                SectionTitle(
+                    "Pricing",
+                    subtitle: "Choose the purchasing-power index Escale selects when you open PPP Pricing."
+                )
+                HStack(spacing: 13) {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                        .background(
+                            Theme.accent,
+                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        )
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Preferred PPP index")
+                            .font(.subheadline.weight(.semibold))
+                        Text(preferredPricingIndex.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Picker("Preferred PPP index", selection: preferredPricingIndexBinding) {
+                        ForEach(PricingIndex.allCases) { index in
+                            Text(index.title).tag(index)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 180)
                 }
                 .padding(14)
                 .cardStyle(cornerRadius: 13)
@@ -648,7 +693,7 @@ public struct SettingsView: View {
                         .foregroundStyle(.red)
                 }
                 Divider()
-                Link(destination: URL(string: "https://usescale.com/support")!) {
+                Link(destination: EscaleLinks.supportPage) {
                     Label("Support", systemImage: "questionmark.circle")
                 }
                 Divider()
@@ -726,6 +771,17 @@ public struct SettingsView: View {
                     .environmentObject(store)
             }
         }
+    }
+
+    private var preferredPricingIndex: PricingIndex {
+        EscalePreferences.preferredPricingIndex(from: preferredPricingIndexValue)
+    }
+
+    private var preferredPricingIndexBinding: Binding<PricingIndex> {
+        Binding(
+            get: { preferredPricingIndex },
+            set: { preferredPricingIndexValue = $0.rawValue }
+        )
     }
 
     private var canPairApps: Bool {

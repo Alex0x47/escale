@@ -16,10 +16,11 @@
     <string>Escale</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <!-- scripts/build-app.sh replaces these template values from VERSION and Git. -->
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>0.0.0</string>
     <key>CFBundleVersion</key>
-    <string>2</string>
+    <string>1</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>

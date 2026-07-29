@@ -2,216 +2,556 @@ import EscaleCore
 import SwiftUI
 import UniformTypeIdentifiers
 
+private struct ScreenshotGallery: Identifiable {
+    let id: String
+    let title: String
+    let screenshots: [StoreScreenshot]
+}
+
 public struct ScreenshotsView: View {
     public init() {}
 
     @EnvironmentObject private var store: WorkspaceStore
     @State private var selectedLocale = "en-US"
+    @State private var selectedGalleryPlatform = StorePlatform.appStore
     @State private var device = "Phone"
     @State private var importsScreenshot = false
+    @State private var isFileDropTargeted = false
 
-    private var visibleScreenshots: [StoreScreenshot] {
-        store.selectedScreenshots.filter { screenshot in
-            store.platformFilter.platforms.contains(screenshot.platform) && screenshot.locale == selectedLocale && matchesDevice(screenshot.device)
+    private var availablePlatforms: [StorePlatform] {
+        StorePlatform.allCases.filter(store.selectedAvailablePlatforms.contains)
+    }
+
+    private var activePlatform: StorePlatform {
+        switch store.platformFilter {
+        case .appStore:
+            .appStore
+        case .playStore:
+            .playStore
+        case .both:
+            availablePlatforms.contains(selectedGalleryPlatform)
+                ? selectedGalleryPlatform
+                : availablePlatforms.first ?? selectedGalleryPlatform
         }
     }
 
-    private func matchesDevice(_ remoteDevice: String) -> Bool {
-        switch device {
-        case "All devices": true
-        case "Phone": remoteDevice == "Phone" || remoteDevice.localizedCaseInsensitiveContains("iPhone")
-        case "Tablet": remoteDevice.localizedCaseInsensitiveContains("iPad") || remoteDevice.localizedCaseInsensitiveContains("Tablet")
-        case "Desktop": remoteDevice.localizedCaseInsensitiveContains("Desktop")
-        case "TV": remoteDevice.localizedCaseInsensitiveContains("TV")
-        default: remoteDevice == device
+    private var showsStoreSwitcher: Bool {
+        store.platformFilter == .both && availablePlatforms.count > 1
+    }
+
+    private var deviceOptions: [String] {
+        switch activePlatform {
+        case .appStore:
+            ["All devices", "Phone", "Tablet", "Desktop", "TV"]
+        case .playStore:
+            ["All devices", "Phone", "Tablet 7″", "Tablet 10″", "TV"]
+        }
+    }
+
+    private var galleries: [ScreenshotGallery] {
+        let screenshots = store.selectedScreenshots.filter {
+            $0.platform == activePlatform
+                && canonicalStoreLocale($0.locale) == canonicalStoreLocale(selectedLocale)
+                && matchesSelectedDevice($0.device)
+        }
+        var keys: [String] = []
+        var grouped: [String: [StoreScreenshot]] = [:]
+        for screenshot in screenshots {
+            let galleryID = screenshot.screenshotSetID ?? screenshot.device.lowercased()
+            if grouped[galleryID] == nil { keys.append(galleryID) }
+            grouped[galleryID, default: []].append(screenshot)
+        }
+        return keys.compactMap { key in
+            guard let screenshots = grouped[key], let first = screenshots.first else { return nil }
+            return ScreenshotGallery(
+                id: "\(activePlatform.rawValue)|\(canonicalStoreLocale(selectedLocale))|\(key)",
+                title: first.device,
+                screenshots: screenshots
+            )
         }
     }
 
     public var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 23) {
-                HStack(alignment: .bottom) {
-                    SectionTitle("Screenshots", subtitle: "Build one visual story and adapt it to each store.", eyebrow: "Store presence")
-                    Spacer()
-                    Picker("Locale", selection: $selectedLocale) {
-                        ForEach(store.selectedLocalizations) { localization in
-                            Text(localization.language).tag(localization.locale)
+            VStack(alignment: .leading, spacing: 22) {
+                header
+
+                if showsStoreSwitcher {
+                    Picker("Screenshot store", selection: $selectedGalleryPlatform) {
+                        ForEach(availablePlatforms) { platform in
+                            Label(platform.rawValue, systemImage: platform.icon).tag(platform)
                         }
                     }
-                    .frame(width: 150)
-                    Picker("Device", selection: $device) {
-                        Text("All devices").tag("All devices")
-                        Text("Phone").tag("Phone")
-                        Text("Tablet").tag("Tablet")
-                        Text("Desktop").tag("Desktop")
-                        Text("TV").tag("TV")
-                    }
-                    .frame(width: 145)
-                    Button {
-                        importsScreenshot = true
-                    } label: {
-                        Label("Add screenshot", systemImage: "plus")
-                    }
-                    .buttonStyle(.borderedProminent)
+                    .pickerStyle(.segmented)
+                    .frame(width: 340)
+                    .accessibilityLabel("Screenshot store")
                 }
 
                 HStack(spacing: 7) {
-                    Image(systemName: "arrow.left.and.right")
-                    Text("Assets are read from the live store. Upload or delete frames here, then sync to confirm processing.")
+                    Image(systemName: "line.3.horizontal")
+                    Text("Drag a screenshot, then release it on an insertion line. The new order saves to \(activePlatform.rawValue) automatically.")
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-                if visibleScreenshots.isEmpty {
-                    EmptyState(icon: "photo.badge.plus", title: "No screenshots here", message: "Add a frame for this store, language, and device.")
-                        .frame(maxWidth: .infinity)
-                        .cardStyle()
+                if galleries.isEmpty {
+                    EmptyState(
+                        icon: "photo.badge.plus",
+                        title: "No \(activePlatform.shortName) screenshots here",
+                        message: "Add a PNG or JPEG for this language and device gallery."
+                    )
+                    .frame(maxWidth: .infinity)
+                    .cardStyle()
                 } else {
-                    ScrollView(.horizontal, showsIndicators: true) {
-                        LazyHStack(alignment: .top, spacing: 18) {
-                            ForEach(Array(visibleScreenshots.enumerated()), id: \.element.id) { index, screenshot in
-                                ScreenshotCard(screenshot: screenshot, number: index + 1) {
-                                    store.deleteScreenshot(screenshot.id)
-                                }
-                            }
-                            addCard
-                        }
-                        .padding(.bottom, 14)
+                    ForEach(galleries) { gallery in
+                        gallerySection(gallery)
                     }
                 }
-
-                HStack(spacing: 16) {
-                    VStack(alignment: .leading, spacing: 9) {
-                        Label("Store asset upload", systemImage: "arrow.up.circle")
-                            .font(.headline).foregroundStyle(Theme.accent)
-                        Text("Upload a PNG or JPEG to the selected store and locale. Escale uses each store’s native asset-upload transaction and refreshes the live gallery afterward.")
-                            .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer()
-                    Button("Upload another") {
-                        importsScreenshot = true
-                    }
-                    .labelStyle(.titleAndIcon)
-                    .buttonStyle(.bordered)
-                }
-                .padding(20)
-                .background(LinearGradient(colors: [Theme.accent.opacity(0.1), Color.cyan.opacity(0.05)], startPoint: .leading, endPoint: .trailing), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Theme.accent.opacity(0.16)))
             }
             .padding(28)
-            .frame(maxWidth: 1350, alignment: .leading)
+            .frame(maxWidth: 1_350, alignment: .leading)
         }
         .background(Theme.canvas)
         .navigationTitle("Screenshots")
-        .onAppear {
-            if !store.selectedLocalizations.contains(where: { $0.locale == selectedLocale }), let locale = store.selectedLocalizations.first?.locale {
-                selectedLocale = locale
+        .overlay {
+            if isFileDropTargeted {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(Theme.accent.opacity(0.08))
+                    .overlay {
+                        Label(
+                            "Upload to \(activePlatform.rawValue)",
+                            systemImage: "arrow.down.doc.fill"
+                        )
+                        .font(.title3.weight(.semibold))
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 14)
+                        .background(.regularMaterial, in: Capsule())
+                    }
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(Theme.accent, style: StrokeStyle(lineWidth: 2, dash: [8]))
+                    )
+                    .padding(12)
+                    .allowsHitTesting(false)
             }
         }
-        .onChange(of: store.selectedLocalizations.map(\.locale)) { _, locales in
-            if !locales.contains(selectedLocale), let locale = locales.first {
-                selectedLocale = locale
+        .animation(.easeOut(duration: 0.15), value: isFileDropTargeted)
+        .dropDestination(for: URL.self) { urls, _ in
+            let imageURLs = urls.filter(isSupportedScreenshot)
+            guard !imageURLs.isEmpty else {
+                store.showToast(
+                    "Choose PNG or JPEG files",
+                    detail: "Other dropped file types were ignored.",
+                    kind: .neutral
+                )
+                return false
             }
+            upload(imageURLs)
+            return true
+        } isTargeted: {
+            isFileDropTargeted = $0
         }
-        .fileImporter(isPresented: $importsScreenshot, allowedContentTypes: [.png, .jpeg], allowsMultipleSelection: false) { result in
-            guard case .success(let urls) = result, let url = urls.first else { return }
-            Task { await store.uploadScreenshot(fileURL: url, locale: selectedLocale, device: device == "All devices" ? "Phone" : device) }
+        .onAppear(perform: normalizeSelections)
+        .onChange(of: store.selectedLocalizations.map(\.locale)) { _, _ in
+            normalizeSelections()
+        }
+        .onChange(of: store.selectedAvailablePlatforms) { _, _ in
+            normalizeSelections()
+        }
+        .onChange(of: store.platformFilter) { _, _ in
+            normalizeSelections()
+        }
+        .onChange(of: activePlatform) { _, _ in
+            normalizeDevice()
+        }
+        .fileImporter(
+            isPresented: $importsScreenshot,
+            allowedContentTypes: [.png, .jpeg],
+            allowsMultipleSelection: true
+        ) { result in
+            guard case .success(let urls) = result else { return }
+            upload(urls)
         }
     }
 
-    private var addCard: some View {
-        Button { importsScreenshot = true } label: {
-            VStack(spacing: 12) {
-                Image(systemName: "plus").font(.system(size: 24, weight: .semibold))
-                Text("Add frame").font(.subheadline.weight(.semibold))
+    private var header: some View {
+        HStack(alignment: .bottom) {
+            SectionTitle(
+                "Screenshots",
+                subtitle: "Build one visual story and adapt it to each store.",
+                eyebrow: "Store presence"
+            )
+            Spacer()
+            Picker("Locale", selection: $selectedLocale) {
+                ForEach(store.selectedLocalizations) { localization in
+                    Text(localization.language).tag(localization.locale)
+                }
             }
-            .foregroundStyle(Theme.accent)
-            .frame(width: 218, height: 455)
-            .background(Theme.accent.opacity(0.045), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Theme.accent.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [6])))
+            .frame(width: 150)
+            Picker("Device", selection: $device) {
+                ForEach(deviceOptions, id: \.self) { option in
+                    Text(option).tag(option)
+                }
+            }
+            .frame(width: 145)
+            Button {
+                importsScreenshot = true
+            } label: {
+                Label("Add screenshot", systemImage: "plus")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(
+                !store.selectedAvailablePlatforms.contains(activePlatform)
+                    || device == "All devices"
+                    || !store.reorderingScreenshotIDs.isEmpty
+            )
+            .help(
+                device == "All devices"
+                    ? "Choose a device gallery before uploading"
+                    : "Upload to \(activePlatform.rawValue)"
+            )
         }
-        .buttonStyle(.plain)
+    }
+
+    private func gallerySection(_ gallery: ScreenshotGallery) -> some View {
+        let isSaving = gallery.screenshots.contains {
+            store.reorderingScreenshotIDs.contains($0.id)
+        }
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: deviceIcon(for: gallery.title))
+                    .foregroundStyle(activePlatform.tint)
+                Text(gallery.title)
+                    .font(.headline)
+                Text("\(gallery.screenshots.count) of \(activePlatform == .appStore ? 10 : 8)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if isSaving {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Saving order…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            ScrollView(.horizontal, showsIndicators: true) {
+                LazyHStack(alignment: .top, spacing: 8) {
+                    ScreenshotInsertionTarget(
+                        before: gallery.screenshots.first?.id,
+                        isEnabled: !isSaving,
+                        onMove: moveScreenshot
+                    )
+                    ForEach(Array(gallery.screenshots.enumerated()), id: \.element.id) { index, screenshot in
+                        ScreenshotCard(
+                            screenshot: screenshot,
+                            number: index + 1,
+                            isReordering: isSaving,
+                            onDelete: { store.deleteScreenshot(screenshot.id) }
+                        )
+                        ScreenshotInsertionTarget(
+                            before: gallery.screenshots.indices.contains(index + 1)
+                                ? gallery.screenshots[index + 1].id
+                                : nil,
+                            isEnabled: !isSaving,
+                            onMove: moveScreenshot
+                        )
+                    }
+                }
+                .padding(.vertical, 8)
+                .padding(.horizontal, 2)
+            }
+        }
+    }
+
+    private func moveScreenshot(_ screenshotID: UUID, before destinationID: UUID?) {
+        Task {
+            await store.reorderScreenshot(screenshotID, before: destinationID)
+        }
+    }
+
+    private func upload(_ urls: [URL]) {
+        guard device != "All devices" else {
+            store.showToast(
+                "Choose a device gallery",
+                detail: "Select Phone, Tablet, Desktop, or TV before uploading screenshots.",
+                kind: .neutral
+            )
+            return
+        }
+        let locale = selectedLocale
+        let uploadDevice = device
+        let platform = activePlatform
+        Task {
+            for url in urls {
+                await store.uploadScreenshot(
+                    fileURL: url,
+                    locale: locale,
+                    device: uploadDevice,
+                    platform: platform
+                )
+            }
+        }
+    }
+
+    private func isSupportedScreenshot(_ url: URL) -> Bool {
+        guard let type = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType else {
+            return false
+        }
+        return type.conforms(to: .png) || type.conforms(to: .jpeg)
+    }
+
+    private func normalizeSelections() {
+        if store.platformFilter == .appStore {
+            selectedGalleryPlatform = .appStore
+        } else if store.platformFilter == .playStore {
+            selectedGalleryPlatform = .playStore
+        }
+        if !availablePlatforms.contains(selectedGalleryPlatform),
+           let first = availablePlatforms.first {
+            selectedGalleryPlatform = first
+        }
+        let locales = store.selectedLocalizations.map(\.locale)
+        if !locales.contains(selectedLocale), let first = locales.first {
+            selectedLocale = first
+        }
+        normalizeDevice()
+    }
+
+    private func normalizeDevice() {
+        if !deviceOptions.contains(device) {
+            device = deviceOptions.contains("Phone") ? "Phone" : deviceOptions[0]
+        }
+    }
+
+    private func matchesSelectedDevice(_ remoteDevice: String) -> Bool {
+        switch device {
+        case "All devices":
+            true
+        case "Phone":
+            remoteDevice == "Phone" || remoteDevice.localizedCaseInsensitiveContains("iPhone")
+        case "Tablet":
+            remoteDevice.localizedCaseInsensitiveContains("iPad")
+                || remoteDevice.localizedCaseInsensitiveContains("Tablet")
+        case "Tablet 7″":
+            remoteDevice.localizedCaseInsensitiveContains("Tablet")
+                && remoteDevice.localizedCaseInsensitiveContains("7")
+        case "Tablet 10″":
+            remoteDevice.localizedCaseInsensitiveContains("Tablet")
+                && remoteDevice.localizedCaseInsensitiveContains("10")
+        case "Desktop":
+            remoteDevice.localizedCaseInsensitiveContains("Desktop")
+        case "TV":
+            remoteDevice.localizedCaseInsensitiveContains("TV")
+        default:
+            remoteDevice == device
+        }
+    }
+
+    private func deviceIcon(for remoteDevice: String) -> String {
+        if remoteDevice.localizedCaseInsensitiveContains("TV") { return "tv" }
+        if remoteDevice.localizedCaseInsensitiveContains("Desktop") { return "desktopcomputer" }
+        if remoteDevice.localizedCaseInsensitiveContains("iPad")
+            || remoteDevice.localizedCaseInsensitiveContains("Tablet") {
+            return "ipad"
+        }
+        return "iphone"
+    }
+}
+
+private struct ScreenshotInsertionTarget: View {
+    let before: UUID?
+    let isEnabled: Bool
+    let onMove: (UUID, UUID?) -> Void
+    @State private var isTargeted = false
+
+    var body: some View {
+        ZStack {
+            Color.clear
+            Capsule()
+                .fill(Theme.accent)
+                .frame(width: isTargeted ? 5 : 2, height: isTargeted ? 410 : 390)
+                .opacity(isTargeted ? 1 : 0.18)
+        }
+        .frame(width: 28, height: 430)
+        .contentShape(Rectangle())
+        .animation(.easeOut(duration: 0.12), value: isTargeted)
+        .dropDestination(for: String.self) { values, _ in
+            guard isEnabled,
+                  let value = values.first,
+                  let draggedID = UUID(uuidString: value) else {
+                return false
+            }
+            onMove(draggedID, before)
+            return true
+        } isTargeted: { targeted in
+            isTargeted = isEnabled && targeted
+        }
+        .accessibilityLabel(before == nil ? "Move screenshot to end" : "Insert screenshot here")
     }
 }
 
 private struct ScreenshotCard: View {
     let screenshot: StoreScreenshot
     let number: Int
+    let isReordering: Bool
     let onDelete: () -> Void
     @State private var hovering = false
+    @State private var confirmsDeletion = false
+
+    private let previewWidth: CGFloat = 230
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ZStack(alignment: .topTrailing) {
-                if let urlString = screenshot.remoteURL, let url = URL(string: urlString), url.scheme?.hasPrefix("http") == true {
-                    AsyncImage(url: url) { phase in
-                        if let image = phase.image { image.resizable().scaledToFill() }
-                        else if phase.error != nil { screenshotPlaceholder }
-                        else { ProgressView().tint(.white) }
-                    }
-                } else {
-                    screenshotPlaceholder
-                }
-                if hovering {
-                    Menu {
-                        Button("Duplicate", systemImage: "plus.square.on.square") {}
-                        Divider()
-                        Button("Delete", systemImage: "trash", role: .destructive, action: onDelete)
-                    } label: {
-                        Image(systemName: "ellipsis").foregroundStyle(.white).padding(9).background(.black.opacity(0.2), in: Circle())
-                    }
-                    .menuStyle(.borderlessButton)
-                    .padding(10)
-                }
-            }
-            .frame(width: 218, height: 455)
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .shadow(color: Color(hex: screenshot.gradientStartHex).opacity(0.22), radius: 14, y: 8)
-            .scaleEffect(hovering ? 1.012 : 1)
+            screenshotImage
+            .frame(width: previewWidth)
+            .background(Color.black.opacity(0.84))
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .shadow(color: Color(hex: screenshot.gradientStartHex).opacity(0.2), radius: 12, y: 7)
+            .scaleEffect(hovering ? 1.008 : 1)
             .animation(.easeOut(duration: 0.16), value: hovering)
             .onHover { hovering = $0 }
-            HStack {
-                Text("\(number)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                Text(screenshot.device).font(.caption.weight(.semibold))
+
+            HStack(spacing: 7) {
+                Image(systemName: "line.3.horizontal")
+                    .foregroundStyle(.tertiary)
+                Text("\(number)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Text(screenshot.device)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
                 Spacer()
                 PlatformBadge(platform: screenshot.platform, showsName: false)
+                Button {
+                    confirmsDeletion = true
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(.red)
+                        .frame(width: 28, height: 28)
+                        .background(.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 7))
+                }
+                .buttonStyle(.plain)
+                .help("Delete screenshot")
+                .accessibilityLabel("Delete screenshot \(number)")
             }
-            .frame(width: 218)
+            .frame(width: previewWidth)
+        }
+        .padding(4)
+        .opacity(isReordering ? 0.58 : 1)
+        .contentShape(Rectangle())
+        .draggable(screenshot.id.uuidString) {
+            Label("Move screenshot \(number)", systemImage: "photo")
+                .font(.headline)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(.regularMaterial, in: Capsule())
+        }
+        .disabled(isReordering)
+        .help("Drag to reorder")
+        .accessibilityLabel("Screenshot \(number)")
+        .accessibilityHint("Drag to change its position in the gallery")
+        .alert("Delete screenshot \(number)?", isPresented: $confirmsDeletion) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive, action: onDelete)
+        } message: {
+            if screenshot.remoteID == nil {
+                Text("This removes the screenshot from Escale. This action cannot be undone.")
+            } else {
+                Text("This permanently removes the screenshot from \(screenshot.platform.rawValue). This action cannot be undone.")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var screenshotImage: some View {
+        if let urlString = screenshot.remoteURL, let url = URL(string: urlString) {
+            AsyncImage(url: url) { phase in
+                if let image = phase.image {
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: previewWidth)
+                } else if phase.error != nil {
+                    screenshotPlaceholder
+                } else {
+                    ProgressView()
+                        .tint(.white)
+                        .frame(width: previewWidth, height: 410)
+                }
+            }
+        } else {
+            screenshotPlaceholder
         }
     }
 
     private var screenshotPlaceholder: some View {
         ZStack {
-            LinearGradient(colors: [Color(hex: screenshot.gradientStartHex), Color(hex: screenshot.gradientEndHex)], startPoint: .topLeading, endPoint: .bottomTrailing)
-            Circle().fill(.white.opacity(0.08)).frame(width: 210).offset(x: 60, y: -160)
+            LinearGradient(
+                colors: [
+                    Color(hex: screenshot.gradientStartHex),
+                    Color(hex: screenshot.gradientEndHex)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            Circle()
+                .fill(.white.opacity(0.08))
+                .frame(width: 210)
+                .offset(x: 60, y: -160)
             VStack(spacing: 9) {
-                Text(screenshot.title).font(.system(size: 20, weight: .bold, design: .rounded)).multilineTextAlignment(.center).foregroundStyle(.white).padding(.horizontal, 14)
-                Text(screenshot.caption).font(.caption).foregroundStyle(.white.opacity(0.75))
+                Text(screenshot.title)
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                Text(screenshot.caption)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.75))
                 Spacer()
                 phoneMockup
             }
             .padding(.top, 32)
         }
+        .frame(width: previewWidth, height: 455)
     }
 
     private var phoneMockup: some View {
         VStack(spacing: 12) {
-            Capsule().fill(Color.primary.opacity(0.14)).frame(width: 45, height: 5)
+            Capsule()
+                .fill(Color.primary.opacity(0.14))
+                .frame(width: 45, height: 5)
             VStack(alignment: .leading, spacing: 8) {
-                RoundedRectangle(cornerRadius: 6).fill(Theme.accent.opacity(0.18)).frame(height: 42)
-                Text("Today").font(.caption.weight(.bold))
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Theme.accent.opacity(0.18))
+                    .frame(height: 42)
+                Text("Today")
+                    .font(.caption.weight(.bold))
                 ForEach(0..<4, id: \.self) { index in
-                    RoundedRectangle(cornerRadius: 3).fill(Color.primary.opacity(index == 3 ? 0.06 : 0.1)).frame(height: 7)
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.primary.opacity(index == 3 ? 0.06 : 0.1))
+                        .frame(height: 7)
                 }
                 Spacer()
-                HStack { Circle().fill(Theme.accent).frame(width: 8, height: 8); Text("Daily reflection").font(.system(size: 8)); Spacer() }
+                HStack {
+                    Circle().fill(Theme.accent).frame(width: 8, height: 8)
+                    Text("Daily reflection").font(.system(size: 8))
+                    Spacer()
+                }
             }
             .padding(13)
         }
         .padding(.top, 9)
         .frame(width: 168, height: 300, alignment: .top)
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 23, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 23, style: .continuous).stroke(.white.opacity(0.4), lineWidth: 4))
+        .background(
+            Color(nsColor: .textBackgroundColor),
+            in: RoundedRectangle(cornerRadius: 23, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 23, style: .continuous)
+                .stroke(.white.opacity(0.4), lineWidth: 4)
+        )
         .shadow(color: .black.opacity(0.18), radius: 9, y: 5)
         .offset(y: 13)
     }

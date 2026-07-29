@@ -15,6 +15,8 @@ public struct PricingView: View {
     @State private var basePriceDraftProductID: UUID?
     @State private var basePriceValidationMessage: String?
     @FocusState private var isBasePriceFocused: Bool
+    @AppStorage(EscalePreferences.preferredPricingIndexKey)
+    private var preferredPricingIndexValue = PricingIndex.worldwidePPP.rawValue
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -32,10 +34,19 @@ public struct PricingView: View {
         }
         .background(Theme.canvas)
         .navigationTitle("PPP pricing")
-        .onAppear { selectFirstAvailableProductIfNeeded() }
+        .onAppear {
+            selectFirstAvailableProductIfNeeded()
+            applyPreferredPricingIndex(to: activeProductID)
+        }
         .onChange(of: store.selectedAppID) { _, _ in selectFirstAvailableProductIfNeeded(force: true) }
         .onChange(of: store.platformFilter) { _, _ in selectFirstAvailableProductIfNeeded() }
         .onChange(of: filteredProductIDs) { _, _ in selectFirstAvailableProductIfNeeded() }
+        .onChange(of: activeProductID) { _, productID in
+            applyPreferredPricingIndex(to: productID)
+        }
+        .onChange(of: preferredPricingIndexValue) { _, _ in
+            applyPreferredPricingIndex(to: activeProductID)
+        }
         .confirmationDialog(
             "Move existing subscribers to the new prices?",
             isPresented: $showingMigrationConfirmation,
@@ -125,6 +136,19 @@ public struct PricingView: View {
         if force || selectedProductID.map({ !filteredProductIDs.contains($0) }) ?? true {
             selectedProductID = filteredProductIDs.first
         }
+    }
+
+    private func applyPreferredPricingIndex(to productID: UUID?) {
+        guard let productID else { return }
+        let product = store.productBinding(id: productID)
+        let preferredIndex = EscalePreferences.preferredPricingIndex(from: preferredPricingIndexValue)
+        guard product.wrappedValue.effectivePricingIndex != preferredIndex else { return }
+
+        var updatedProduct = product.wrappedValue
+        updatedProduct.pricingIndex = preferredIndex
+        updatedProduct.pricingCalculatedAt = nil
+        updatedProduct.pricingSourceSummary = nil
+        product.wrappedValue = updatedProduct
     }
 
     private func productPickerTitle(_ product: StoreProduct) -> String {
@@ -291,7 +315,11 @@ public struct PricingView: View {
                 Text("Pricing index").font(.caption.weight(.semibold))
                 Picker("Pricing index", selection: Binding(
                     get: { product.wrappedValue.effectivePricingIndex },
-                    set: { product.wrappedValue.pricingIndex = $0; product.wrappedValue.pricingCalculatedAt = nil }
+                    set: {
+                        product.wrappedValue.pricingIndex = $0
+                        product.wrappedValue.pricingCalculatedAt = nil
+                        product.wrappedValue.pricingSourceSummary = nil
+                    }
                 )) {
                     ForEach(PricingIndex.allCases) { index in Text(index.title).tag(index) }
                 }

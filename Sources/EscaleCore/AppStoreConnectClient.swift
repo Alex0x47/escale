@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public enum StoreDataSection: Hashable, Sendable {
@@ -490,12 +491,93 @@ public struct AppStoreConnectClient: Sendable {
             path: "/v1/appScreenshots/\(screenshotID)",
             type: "appScreenshots",
             id: screenshotID,
-            attributes: ["uploaded": true]
+            attributes: [
+                "uploaded": true,
+                "sourceFileChecksum": Insecure.MD5.hash(data: data)
+                    .map { String(format: "%02x", $0) }
+                    .joined()
+            ]
         )
+        try await waitForScreenshotProcessing(screenshotID: screenshotID)
     }
 
     public func deleteScreenshot(remoteID: String) async throws {
         _ = try await request(path: "/v1/appScreenshots/\(remoteID)", method: "DELETE")
+    }
+
+    public func reorderScreenshots(setID: String, remoteIDs: [String]) async throws {
+        let page = try await request(
+            path: "/v1/appScreenshotSets/\(setID)/appScreenshots",
+            query: [
+                URLQueryItem(name: "fields[appScreenshots]", value: "assetDeliveryState"),
+                URLQueryItem(name: "limit", value: "200")
+            ]
+        ).value
+        let resources = page.resources("data")
+        let currentIDs = resources.compactMap { $0.string("id") }
+        guard currentIDs.count == remoteIDs.count,
+              Set(currentIDs) == Set(remoteIDs) else {
+            throw APIError.unsupported(
+                "This screenshot gallery changed in App Store Connect. Refresh Escale before reordering it again."
+            )
+        }
+
+        let deliveryStates = resources.compactMap {
+            $0.dictionary("attributes").dictionary("assetDeliveryState").string("state")
+        }
+        if deliveryStates.contains("FAILED") {
+            throw APIError.unsupported(
+                "At least one screenshot failed Apple’s processing. Remove or replace that screenshot before changing the order."
+            )
+        }
+        if deliveryStates.contains(where: { $0 != "COMPLETE" }) {
+            throw APIError.unsupported(
+                "Apple is still processing at least one screenshot. Wait a moment, refresh, and then reorder the gallery."
+            )
+        }
+        guard currentIDs != remoteIDs else { return }
+
+        let body: [String: Any] = [
+            "data": remoteIDs.map { ["type": "appScreenshots", "id": $0] }
+        ]
+        do {
+            _ = try await request(
+                path: "/v1/appScreenshotSets/\(setID)/relationships/appScreenshots",
+                method: "PATCH",
+                body: HTTPTransport.jsonBody(body)
+            )
+        } catch APIError.http(let status, _) where status == 409 {
+            throw APIError.unsupported(
+                "Apple no longer allows changes to this screenshot set in its current version state. Refresh the app; if the version is in review or live, create an editable App Store version first."
+            )
+        }
+    }
+
+    private func waitForScreenshotProcessing(screenshotID: String) async throws {
+        for attempt in 0..<30 {
+            let resource = try await request(
+                path: "/v1/appScreenshots/\(screenshotID)",
+                query: [URLQueryItem(name: "fields[appScreenshots]", value: "assetDeliveryState")]
+            ).value
+                .dictionary("data")
+                .dictionary("attributes")
+                .dictionary("assetDeliveryState")
+            switch resource.string("state") {
+            case "COMPLETE":
+                return
+            case "FAILED":
+                let detail = resource.array("errors").first?.string("description")
+                    ?? "Apple could not process the uploaded screenshot."
+                throw APIError.unsupported(detail)
+            default:
+                if attempt < 29 {
+                    try await Task.sleep(for: .seconds(1))
+                }
+            }
+        }
+        throw APIError.unsupported(
+            "The screenshot was uploaded, but Apple is still processing it. Refresh the app in a moment before reordering."
+        )
     }
 
     public func applyRegionalPrices(

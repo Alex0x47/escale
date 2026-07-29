@@ -44,7 +44,6 @@ public enum EscaleAnalyticsScreenshotOperation: String, Sendable {
 
 public enum EscaleCommercialPlan: String, Sendable {
     case yearly
-    case lifetime
 }
 
 /// A deliberately bounded analytics schema.

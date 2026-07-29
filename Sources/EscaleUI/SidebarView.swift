@@ -14,6 +14,8 @@ public struct SidebarView: View {
     @State private var showsOfficialDownloadPrompt = false
     @State private var pairingRequest: AppPairingRequest?
     @State private var selectedStoreVersion: StoreApp?
+    @State private var newIOSVersionRequest: NewIOSVersionRequest?
+    @State private var showingNewAndroidVersion = false
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -75,10 +77,29 @@ public struct SidebarView: View {
                             .tracking(0.8)
                             .foregroundStyle(.secondary)
                         if let ios = app.appStoreApp {
-                            StoreVersionRow(app: ios) { selectedStoreVersion = ios }
+                            VStack(spacing: 4) {
+                                StoreVersionRow(app: ios) { selectedStoreVersion = ios }
+                                NewStoreVersionButton(
+                                    platform: .appStore,
+                                    isDisabled: ios.hasEditableMetadataVersion
+                                ) {
+                                    openNewIOSVersion(ios)
+                                }
+                                .help(
+                                    ios.hasEditableMetadataVersion
+                                        ? "An editable App Store version already exists"
+                                        : "Create a new editable App Store version"
+                                )
+                            }
                         }
                         if let android = app.playStoreApp {
-                            StoreVersionRow(app: android) { selectedStoreVersion = android }
+                            VStack(spacing: 4) {
+                                StoreVersionRow(app: android) { selectedStoreVersion = android }
+                                NewStoreVersionButton(platform: .playStore) {
+                                    openNewAndroidVersion()
+                                }
+                                .help("Upload a signed bundle and create a Google Play draft")
+                            }
                         }
                         if app.linkedCount == 1 {
                             Button {
@@ -190,6 +211,14 @@ public struct SidebarView: View {
             StoreVersionDetailsSheet(app: app)
                 .frame(width: 680, height: 650)
         }
+        .sheet(item: $newIOSVersionRequest) { request in
+            NewIOSVersionSheet(initialVersion: request.suggestedVersion)
+                .environmentObject(store)
+        }
+        .sheet(isPresented: $showingNewAndroidVersion) {
+            NewAndroidVersionSheet()
+                .environmentObject(store)
+        }
     }
 
     private static let promotionDuration: TimeInterval = 12 * 60 * 60
@@ -198,6 +227,17 @@ public struct SidebarView: View {
     private var promotionStartedAt: Date {
         guard promotionStartedAtValue > 0 else { return Date() }
         return Date(timeIntervalSince1970: promotionStartedAtValue)
+    }
+
+    private func openNewIOSVersion(_ app: StoreApp) {
+        guard !app.hasEditableMetadataVersion else { return }
+        newIOSVersionRequest = NewIOSVersionRequest(
+            suggestedVersion: suggestedNextAppStoreVersion(from: app.version)
+        )
+    }
+
+    private func openNewAndroidVersion() {
+        showingNewAndroidVersion = true
     }
 
     private func openPromotion(startedAt: Date) {
@@ -458,6 +498,34 @@ private struct StoreVersionRow: View {
         .buttonStyle(.plain)
         .background(Color.primary.opacity(0.001), in: RoundedRectangle(cornerRadius: 8))
         .help("Show \(app.platform.rawValue) version details")
+    }
+}
+
+private struct NewStoreVersionButton: View {
+    let platform: StorePlatform
+    var isDisabled = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(
+                "New \(platform.shortName) version",
+                systemImage: "plus.circle.fill"
+            )
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(isDisabled ? Color.secondary : platform.tint)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .background(
+                (isDisabled ? Color.secondary : platform.tint).opacity(0.08),
+                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isDisabled)
+        .padding(.leading, 24)
     }
 }
 

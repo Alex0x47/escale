@@ -7,6 +7,7 @@ public struct ListingEditorView: View {
 
     @EnvironmentObject private var store: WorkspaceStore
     @State private var selectedLocalizationID: UUID?
+    @State private var localizationFilter = ""
     @State private var selectedField: ListingMetadataField = .promotionalText
     @State private var isTranslating = false
     @State private var translatingFields: Set<ListingMetadataField> = []
@@ -44,9 +45,31 @@ public struct ListingEditorView: View {
             }
             .padding(16)
             Divider()
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Filter languages", text: $localizationFilter)
+                    .textFieldStyle(.plain)
+                if !localizationFilter.isEmpty {
+                    Button {
+                        localizationFilter = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Clear filter")
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(Theme.canvas.opacity(0.65), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            Divider()
             ScrollView {
                 LazyVStack(spacing: 4) {
-                    ForEach(store.selectedLocalizations) { localization in
+                    ForEach(filteredLocalizations) { localization in
                         let completion = localization.completion(for: store.selectedEditingPlatforms)
                         Button {
                             selectedLocalizationID = localization.id
@@ -88,6 +111,13 @@ public struct ListingEditorView: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    if filteredLocalizations.isEmpty {
+                        Text("No matching languages")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 18)
+                    }
                 }
                 .padding(8)
             }
@@ -108,6 +138,15 @@ public struct ListingEditorView: View {
             .padding(15)
         }
         .background(Theme.sidebar.opacity(0.75))
+    }
+
+    private var filteredLocalizations: [ListingLocalization] {
+        let query = localizationFilter.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return store.selectedLocalizations }
+        return store.selectedLocalizations.filter {
+            $0.language.localizedStandardContains(query)
+                || $0.locale.localizedStandardContains(query)
+        }
     }
 
     private var supportedLocales: [(code: String, name: String)] {

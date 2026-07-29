@@ -41,6 +41,21 @@ public struct ProFeatureSheet: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("$99")
+                    .font(.title.weight(.bold))
+                    .foregroundStyle(Theme.accent)
+                Text("per year")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Text("All Pro features")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(16)
+            .background(Theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+
             Label(
                 "The Community edition remains fully available for manual workflows.",
                 systemImage: "checkmark.circle.fill"

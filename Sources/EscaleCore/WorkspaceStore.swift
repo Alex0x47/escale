@@ -228,6 +228,25 @@ public final class WorkspaceStore: ObservableObject {
         isOnboardingPresented = true
     }
 
+    public func resetAllData() throws {
+        pendingEditorPersistence?.cancel()
+        pendingEditorPersistence = nil
+
+        try CredentialStore.removeAllEscaleItems()
+
+        let defaults = UserDefaults.standard
+        defaults.dictionaryRepresentation().keys.forEach(defaults.removeObject(forKey:))
+        if let bundleIdentifier = Bundle.main.bundleIdentifier {
+            defaults.removePersistentDomain(forName: bundleIdentifier)
+        }
+        defaults.removePersistentDomain(forName: legacyDefaultsDomain)
+
+        URLCache.shared.removeAllCachedResponses()
+        HTTPCookieStorage.shared.cookies?.forEach {
+            HTTPCookieStorage.shared.deleteCookie($0)
+        }
+    }
+
     public func connectApple(issuerID: String, keyID: String, privateKeyPEM: String) async throws {
         let credentials = AppleCredentials(
             issuerID: issuerID.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -413,7 +432,9 @@ public final class WorkspaceStore: ObservableObject {
                 let available = self.availablePlatforms(for: appID)
                 let targets = self.platformFilter.platforms.intersection(available)
                 let stored = self.workspace.localizationsByApp[appID]![index]
+                guard listingMetadataHasChanges(updated, comparedTo: stored, displaying: targets) else { return }
                 var copy = applyingListingMetadata(from: updated, to: stored, platforms: targets)
+                guard copy != stored else { return }
                 copy.dirtyPlatforms.formUnion(targets)
                 self.workspace.localizationsByApp[appID]?[index] = copy
                 self.scheduleEditorPersistence()

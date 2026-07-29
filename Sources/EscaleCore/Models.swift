@@ -75,6 +75,23 @@ public struct StoreApp: Identifiable, Codable, Hashable, Sendable {
     ]
 }
 
+public func suggestedNextAppStoreVersion(from version: String) -> String {
+    var parts = version.split(separator: ".").compactMap { Int($0) }
+    guard !parts.isEmpty else { return "1.0.0" }
+    while parts.count < 3 { parts.append(0) }
+    parts[parts.count - 1] += 1
+    return parts.map(String.init).joined(separator: ".")
+}
+
+public func isValidAppStoreVersion(_ version: String) -> Bool {
+    let cleanVersion = version.trimmingCharacters(in: .whitespacesAndNewlines)
+    let parts = cleanVersion.split(separator: ".", omittingEmptySubsequences: false)
+    guard (1...3).contains(parts.count) else { return false }
+    return parts.allSatisfy { part in
+        !part.isEmpty && part.allSatisfy { $0.isASCII && $0.isNumber }
+    }
+}
+
 public struct StoreVersionDetails: Codable, Hashable, Sendable {
     public var platformName: String? = nil
     public var releaseType: String? = nil
@@ -666,6 +683,22 @@ public func listingLocalization(
     result.subtitle = localization.googleSubtitle ?? localization.subtitle
     result.description = localization.googleDescription ?? localization.description
     return result
+}
+
+/// Returns whether the metadata currently shown in the editor differs from its
+/// stored representation for the active store selection.
+public func listingMetadataHasChanges(
+    _ displayed: ListingLocalization,
+    comparedTo stored: ListingLocalization,
+    displaying platforms: Set<StorePlatform>
+) -> Bool {
+    let current = listingLocalization(stored, displaying: platforms)
+    return displayed.title != current.title
+        || displayed.subtitle != current.subtitle
+        || displayed.promotionalText != current.promotionalText
+        || displayed.description != current.description
+        || displayed.keywords != current.keywords
+        || displayed.releaseNotes != current.releaseNotes
 }
 
 public func applyingListingMetadata(

@@ -1,26 +1,13 @@
 import EscaleCore
 import SwiftUI
-import UniformTypeIdentifiers
 
 public struct OverviewView: View {
     public init() {}
 
     @EnvironmentObject private var store: WorkspaceStore
-    @Environment(\.escaleCommercialActions) private var commercialActions
-    @Environment(\.openURL) private var openURL
     @State private var pairingRequest: AppPairingRequest?
-    @State private var proFeature: EscaleFeature?
-    @State private var showsOfficialDownloadPrompt = false
-    @State private var isCreatingIOSVersion = false
-    @State private var showingNewIOSVersion = false
-    @State private var newVersionNumber = ""
-    @State private var isCreatingAndroidVersion = false
+    @State private var newIOSVersionRequest: NewIOSVersionRequest?
     @State private var showingNewAndroidVersion = false
-    @State private var showingAndroidBundleImporter = false
-    @State private var androidBundleURL: URL?
-    @State private var androidBundleSelectionError: String?
-    @State private var androidReleaseName = ""
-    @State private var androidReleaseTrack: AndroidReleaseTrack = .production
 
     private var localizationHealth: String {
         guard !store.selectedLocalizations.isEmpty else { return "—" }
@@ -101,18 +88,13 @@ public struct OverviewView: View {
             AppPairingView(appID: request.appID)
                 .environmentObject(store)
         }
-        .sheet(isPresented: $showingNewIOSVersion) { newIOSVersionSheet }
-        .sheet(isPresented: $showingNewAndroidVersion) { newAndroidVersionSheet }
-        .sheet(item: $proFeature) { feature in
-            ProFeatureSheet(feature: feature)
+        .sheet(item: $newIOSVersionRequest) { request in
+            NewIOSVersionSheet(initialVersion: request.suggestedVersion)
+                .environmentObject(store)
         }
-        .alert("Download the official Escale app", isPresented: $showsOfficialDownloadPrompt) {
-            Button("Not now", role: .cancel) {}
-            Button("Open download page") {
-                openURL(Self.downloadPageURL)
-            }
-        } message: {
-            Text("Creating store versions is an Escale Pro feature. Download the official app to upgrade; your Community workspace will remain available.")
+        .sheet(isPresented: $showingNewAndroidVersion) {
+            NewAndroidVersionSheet()
+                .environmentObject(store)
         }
     }
 
@@ -163,251 +145,37 @@ public struct OverviewView: View {
             }
             if let apple = app.appStoreApp, !apple.hasEditableMetadataVersion {
                 Button {
-                    guard unlocksProFeature(.createAppStoreVersion) else { return }
-                    newVersionNumber = suggestedNextVersion(from: apple.version)
-                    showingNewIOSVersion = true
-                } label: {
-                    Label(
-                        "New iOS version",
-                        systemImage: hasProPlan ? "plus.circle" : "lock.fill"
+                    newIOSVersionRequest = NewIOSVersionRequest(
+                        suggestedVersion: suggestedNextAppStoreVersion(from: apple.version)
                     )
+                } label: {
+                    Label("New iOS version", systemImage: "plus.circle.fill")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
+                .tint(StorePlatform.appStore.tint)
                 .controlSize(.large)
+                .help("Create a new editable App Store version")
             }
             if app.playStoreApp != nil {
                 Button {
-                    guard unlocksProFeature(.uploadGooglePlayBundle) else { return }
-                    resetAndroidVersionForm()
                     showingNewAndroidVersion = true
                 } label: {
-                    Label(
-                        "New Android version",
-                        systemImage: hasProPlan ? "shippingbox" : "lock.fill"
-                    )
+                    Label("New Android version", systemImage: "shippingbox.fill")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
+                .tint(StorePlatform.playStore.tint)
                 .controlSize(.large)
+                .help("Upload a signed bundle and create a Google Play draft")
             }
             Button {
                 store.selectedSection = .listing
             } label: {
                 Label("Edit listing", systemImage: "pencil")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.bordered)
             .controlSize(.large)
             .disabled(store.isSelectedAppLoading && store.selectedLocalizations.isEmpty)
         }
-    }
-
-    private var newIOSVersionSheet: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            SectionTitle("Create an iOS version", subtitle: "Creates an editable App Store Connect draft. Escale will not submit it for review.", eyebrow: "App Store Connect")
-            TextField("Version, for example 2.4.0", text: $newVersionNumber)
-                .textFieldStyle(.roundedBorder)
-            Text("The previous live version’s promotional text is loaded automatically for every matching localization.")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Spacer()
-                Button("Cancel") { showingNewIOSVersion = false }.keyboardShortcut(.cancelAction)
-                Button("Create version") {
-                    isCreatingIOSVersion = true
-                    Task {
-                        if await store.createAppStoreVersion(newVersionNumber) { showingNewIOSVersion = false }
-                        isCreatingIOSVersion = false
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(newVersionNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isCreatingIOSVersion)
-            }
-        }
-        .padding(24)
-        .frame(width: 500)
-    }
-
-    private var newAndroidVersionSheet: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            SectionTitle(
-                "Create an Android version",
-                subtitle: "Uploads a signed Android App Bundle and creates an editable Google Play draft. Escale will not submit it for review or release it.",
-                eyebrow: "Google Play"
-            )
-
-            VStack(alignment: .leading, spacing: 9) {
-                Text("SIGNED APP BUNDLE")
-                    .font(.caption2.weight(.bold))
-                    .tracking(0.65)
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 12) {
-                    Image(systemName: androidBundleURL == nil ? "shippingbox" : "checkmark.seal.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(androidBundleURL == nil ? Theme.accent : .green)
-                        .frame(width: 38, height: 38)
-                        .background(
-                            (androidBundleURL == nil ? Theme.accent : Color.green).opacity(0.1),
-                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        )
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(androidBundleURL?.lastPathComponent ?? "No bundle selected")
-                            .font(.subheadline.weight(.semibold))
-                            .lineLimit(1)
-                        Text("Google Play validates the package name, signing key, and version code.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button(androidBundleURL == nil ? "Choose .aab…" : "Replace…") {
-                        showingAndroidBundleImporter = true
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .padding(14)
-                .background(Theme.card.opacity(0.7), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(Theme.border))
-
-                if let androidBundleSelectionError {
-                    Label(androidBundleSelectionError, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
-            }
-
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("TARGET TRACK")
-                        .font(.caption2.weight(.bold))
-                        .tracking(0.65)
-                        .foregroundStyle(.secondary)
-                    Picker("Target track", selection: $androidReleaseTrack) {
-                        ForEach(AndroidReleaseTrack.allCases) { track in
-                            Text(track.title).tag(track)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(maxWidth: .infinity)
-                }
-
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("RELEASE NAME · OPTIONAL")
-                        .font(.caption2.weight(.bold))
-                        .tracking(0.65)
-                        .foregroundStyle(.secondary)
-                    TextField("Google can derive it from the bundle", text: $androidReleaseName)
-                        .textFieldStyle(.roundedBorder)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                let issues = googlePlayReleaseNotesValidationIssues(store.selectedGooglePlayReleaseNotesBlock)
-                let noteCount = googlePlayReleaseNotes(in: store.selectedGooglePlayReleaseNotesBlock)
-                    .filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                    .count
-                Label(
-                    issues.isEmpty
-                        ? "\(noteCount) localized release note\(noteCount == 1 ? "" : "s") will be attached."
-                        : "Release notes are invalid and will be skipped: \(issues[0])",
-                    systemImage: issues.isEmpty ? "text.document" : "exclamationmark.triangle.fill"
-                )
-                .font(.caption)
-                .foregroundStyle(issues.isEmpty ? Color.secondary : Color.orange)
-                Text("The bundle is saved as a draft on \(androidReleaseTrack.title). Existing users will not receive it.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            HStack {
-                Spacer()
-                Button("Cancel") {
-                    showingNewAndroidVersion = false
-                    resetAndroidVersionForm()
-                }
-                .keyboardShortcut(.cancelAction)
-                Button {
-                    guard let androidBundleURL else { return }
-                    isCreatingAndroidVersion = true
-                    Task {
-                        let created = await store.createGooglePlayDraftRelease(
-                            bundleFileURL: androidBundleURL,
-                            track: androidReleaseTrack.rawValue,
-                            releaseName: androidReleaseName
-                        )
-                        isCreatingAndroidVersion = false
-                        if created {
-                            showingNewAndroidVersion = false
-                            resetAndroidVersionForm()
-                        }
-                    }
-                } label: {
-                    if isCreatingAndroidVersion {
-                        HStack(spacing: 7) {
-                            ProgressView().controlSize(.small)
-                            Text("Uploading bundle…")
-                        }
-                    } else {
-                        Text("Upload and create draft")
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(androidBundleURL == nil || isCreatingAndroidVersion)
-            }
-        }
-        .padding(24)
-        .frame(width: 600)
-        .fileImporter(
-            isPresented: $showingAndroidBundleImporter,
-            allowedContentTypes: [UTType(filenameExtension: "aab") ?? .data],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                guard url.pathExtension.caseInsensitiveCompare("aab") == .orderedSame else {
-                    androidBundleURL = nil
-                    androidBundleSelectionError = "Choose an Android App Bundle with the .aab extension."
-                    return
-                }
-                androidBundleURL = url
-                androidBundleSelectionError = nil
-            case .failure(let error):
-                androidBundleSelectionError = error.localizedDescription
-            }
-        }
-    }
-
-    private func resetAndroidVersionForm() {
-        androidBundleURL = nil
-        androidBundleSelectionError = nil
-        androidReleaseName = ""
-        androidReleaseTrack = .production
-        showingAndroidBundleImporter = false
-        isCreatingAndroidVersion = false
-    }
-
-    private static let downloadPageURL = URL(string: "https://escale.app/")!
-
-    private var hasProPlan: Bool {
-        store.entitlements.plan == .pro
-    }
-
-    private func unlocksProFeature(_ feature: EscaleFeature) -> Bool {
-        guard !hasProPlan else { return true }
-        store.track(.proGateViewed(feature: feature))
-        if commercialActions == nil {
-            showsOfficialDownloadPrompt = true
-        } else {
-            proFeature = feature
-        }
-        return false
-    }
-
-    private func suggestedNextVersion(from version: String) -> String {
-        var parts = version.split(separator: ".").compactMap { Int($0) }
-        guard !parts.isEmpty else { return "1.0.0" }
-        while parts.count < 3 { parts.append(0) }
-        parts[parts.count - 1] += 1
-        return parts.map(String.init).joined(separator: ".")
     }
 
     private func releasePanel(_ app: UnifiedApp) -> some View {
@@ -480,24 +248,6 @@ public struct OverviewView: View {
             Text(title).font(.caption.weight(.semibold))
             Spacer()
             Text("\(value)").font(.caption.weight(.bold).monospacedDigit()).foregroundStyle(.secondary)
-        }
-    }
-}
-
-private enum AndroidReleaseTrack: String, CaseIterable, Identifiable {
-    case production
-    case internalTesting = "internal"
-    case closedTesting = "alpha"
-    case openTesting = "beta"
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .production: "Production"
-        case .internalTesting: "Internal testing"
-        case .closedTesting: "Closed testing"
-        case .openTesting: "Open testing"
         }
     }
 }

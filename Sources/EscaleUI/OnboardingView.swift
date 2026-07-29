@@ -521,6 +521,7 @@ public struct SettingsView: View {
     @State private var openAIStatusMessage: String?
     @State private var openAIStatusIsError = false
     @State private var platformPendingDisconnect: StorePlatform?
+    @State private var confirmsDataReset = false
 
     public var body: some View {
         ScrollView {
@@ -650,6 +651,33 @@ public struct SettingsView: View {
                     Button("Leave demo workspace") { store.leaveDemoMode() }
                         .foregroundStyle(.red)
                 }
+                Divider()
+                Link(destination: URL(string: "https://usescale.com/support")!) {
+                    Label("Support", systemImage: "questionmark.circle")
+                }
+                Divider()
+                SectionTitle(
+                    "Danger zone",
+                    subtitle: "Permanently erase this Mac's Escale workspace and configuration."
+                )
+                HStack(alignment: .center, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Reset all data")
+                            .font(.subheadline.weight(.semibold))
+                        Text("Removes cached app data, settings, credentials, API keys, and any activated licence.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Button("Reset data", role: .destructive) {
+                        confirmsDataReset = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                }
+                .padding(14)
+                .cardStyle(cornerRadius: 13)
             }
             .padding(28)
         }
@@ -670,6 +698,23 @@ public struct SettingsView: View {
                 },
                 secondaryButton: .cancel()
             )
+        }
+        .alert("Reset all Escale data?", isPresented: $confirmsDataReset) {
+            Button("Reset data", role: .destructive) {
+                do {
+                    try store.resetAllData()
+                    NSApplication.shared.terminate(nil)
+                } catch {
+                    store.showToast(
+                        "Could not reset all data",
+                        detail: error.localizedDescription,
+                        kind: .error
+                    )
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently removes the workspace, settings, developer credentials, OpenAI API key, and activated licence from this Mac. Escale will quit. This cannot be undone.")
         }
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {

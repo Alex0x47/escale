@@ -40,6 +40,27 @@ func extensibleProEntitlements() {
     #expect(!entitlements.hasAccess(to: .multipleDeveloperAccounts))
 }
 
+@Test("A hard reset targets every Escale-owned Keychain service")
+func hardResetKeychainScope() {
+    let services = escaleOwnedKeychainServices(
+        in: [
+            "app.escale.mac.credentials",
+            "app.escale.mac.pro-license",
+            "app.escale.mac.pro-promotion",
+            "app.gouvernail.mac.credentials",
+            "com.example.unrelated"
+        ],
+        prefixes: ["app.escale.mac.", "app.gouvernail.mac."]
+    )
+
+    #expect(services == [
+        "app.escale.mac.credentials",
+        "app.escale.mac.pro-license",
+        "app.escale.mac.pro-promotion",
+        "app.gouvernail.mac.credentials"
+    ])
+}
+
 @Test("Demo workspace links matching store identifiers")
 func linkedStoreIdentifiers() {
     let workspace = SampleData.workspace()
@@ -104,6 +125,19 @@ func editableAppStoreState() {
     var live = base
     live.remoteState = "READY_FOR_DISTRIBUTION"
     #expect(!live.hasEditableMetadataVersion)
+}
+
+@Test("Suggested App Store versions are valid without further editing")
+func suggestedAppStoreVersionValidation() {
+    let suggested = suggestedNextAppStoreVersion(from: "2.4")
+
+    #expect(suggested == "2.4.1")
+    #expect(isValidAppStoreVersion(suggested))
+    #expect(isValidAppStoreVersion(" 3.0.0 "))
+    #expect(!isValidAppStoreVersion(""))
+    #expect(!isValidAppStoreVersion("3..0"))
+    #expect(!isValidAppStoreVersion("3.0.beta"))
+    #expect(!isValidAppStoreVersion("3.0.0.1"))
 }
 
 @Test("Store apps saved before version details remain decodable")
@@ -180,6 +214,25 @@ func platformSpecificListingMetadata() {
     let updated = applyingListingMetadata(from: googleDisplay, to: stored, platforms: [.playStore])
     #expect(updated.title == "Apple title")
     #expect(updated.googleTitle == "Updated Google title")
+}
+
+@Test("Listing metadata is dirty only after its displayed copy changes")
+func listingMetadataDirtyState() {
+    var stored = SampleData.localizations()[0]
+    stored.title = "Apple title"
+    stored.googleTitle = "Google title"
+
+    let appleDisplay = listingLocalization(stored, displaying: [.appStore])
+    let googleDisplay = listingLocalization(stored, displaying: [.playStore])
+    let combinedDisplay = listingLocalization(stored, displaying: [.appStore, .playStore])
+
+    #expect(!listingMetadataHasChanges(appleDisplay, comparedTo: stored, displaying: [.appStore]))
+    #expect(!listingMetadataHasChanges(googleDisplay, comparedTo: stored, displaying: [.playStore]))
+    #expect(!listingMetadataHasChanges(combinedDisplay, comparedTo: stored, displaying: [.appStore, .playStore]))
+
+    var editedDisplay = googleDisplay
+    editedDisplay.title = "Updated Google title"
+    #expect(listingMetadataHasChanges(editedDisplay, comparedTo: stored, displaying: [.playStore]))
 }
 
 @Test("Google draft commits never submit or cancel an in-review change")

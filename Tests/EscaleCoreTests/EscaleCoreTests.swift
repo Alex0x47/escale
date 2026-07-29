@@ -44,7 +44,6 @@ func extensibleProEntitlements() {
     #expect(entitlements.hasAccess(to: .createAppStoreVersion))
     #expect(entitlements.hasAccess(to: .uploadGooglePlayBundle))
     #expect(entitlements.hasAccess(to: .releaseNoteTemplates))
-    #expect(!entitlements.hasAccess(to: .multipleDeveloperAccounts))
 }
 
 @Test("Community cannot mutate What’s New templates")

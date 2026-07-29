@@ -15,10 +15,6 @@ public enum EscalePlan: String, Codable, Sendable {
 public enum EscaleFeature: String, CaseIterable, Codable, Hashable, Identifiable, Sendable {
     case applyRegionalPricing
     case bulkTranslations
-    case multipleDeveloperAccounts
-    case pricingHistoryAndAuditLog
-    case scheduledSynchronizationAndAutomation
-    case agencyWorkflows
     case createAppStoreVersion
     case uploadGooglePlayBundle
     case releaseNoteTemplates
@@ -29,10 +25,6 @@ public enum EscaleFeature: String, CaseIterable, Codable, Hashable, Identifiable
         switch self {
         case .applyRegionalPricing: "Apply regional pricing"
         case .bulkTranslations: "Bulk translations"
-        case .multipleDeveloperAccounts: "Multiple developer accounts"
-        case .pricingHistoryAndAuditLog: "Pricing history and audit log"
-        case .scheduledSynchronizationAndAutomation: "Scheduled synchronization and automation"
-        case .agencyWorkflows: "Agency workflows"
         case .createAppStoreVersion: "Create iOS versions"
         case .uploadGooglePlayBundle: "Create Android versions"
         case .releaseNoteTemplates: "What’s New templates"
@@ -45,14 +37,6 @@ public enum EscaleFeature: String, CaseIterable, Codable, Hashable, Identifiable
             "Calculate and preview PPP prices in Community, then use Pro to apply the reviewed prices directly to the stores."
         case .bulkTranslations:
             "Translate a selected locale in Community, or use Pro to translate fields and release notes across every locale in the current app."
-        case .multipleDeveloperAccounts:
-            "Connect and switch between multiple App Store Connect and Google Play developer accounts."
-        case .pricingHistoryAndAuditLog:
-            "Keep a reviewable history of pricing calculations, remote changes, and their outcomes."
-        case .scheduledSynchronizationAndAutomation:
-            "Schedule store synchronization and automate recurring operational work."
-        case .agencyWorkflows:
-            "Organize clients, accounts, permissions, and repeatable workflows for agency use."
         case .createAppStoreVersion:
             "Create a new editable iOS version directly in App Store Connect with Escale Community or Pro."
         case .uploadGooglePlayBundle:

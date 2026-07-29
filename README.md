@@ -59,8 +59,7 @@ translation, and PPP price calculation and preview.
 >
 > Pro includes everything in Community, then adds bulk translation across every
 > locale, one-click regional price application, reusable What's New templates,
-> multiple developer accounts, Google Play bundle upload and draft creation,
-> pricing history and audit logs, scheduled operations, and agency workflows.
+> and Google Play bundle upload with editable draft-release creation.
 >
 > Escale Pro is currently **$99/year for one user on up to two Macs** and includes
 > current and future Pro features while the subscription is active.
@@ -70,15 +69,13 @@ translation, and PPP price calculation and preview.
 | --- | --- | --- |
 | Store listings, screenshots, reviews, and replies | Manual | Manual |
 | Linked applications | Unlimited | Unlimited |
-| Developer accounts | One per store | Multiple |
+| Developer accounts | One per store | One per store |
 | App Store version creation | Included | Included |
 | Google Play bundle upload and draft creation | — | Included |
 | AI-assisted translation | One locale at a time | Every app locale |
 | What's New templates | — | Included |
 | PPP regional pricing | Calculate and preview | Apply to both stores |
-| Synchronization | Manual | Scheduled automation |
-| Pricing history and operational audit log | — | Included |
-| Agency workflows | — | Included |
+| Synchronization | Manual | Manual |
 
 The Community source and reusable `EscaleCore` and `EscaleUI` libraries remain
 Apache-2.0 licensed. Escale Pro is a separate commercial distribution with

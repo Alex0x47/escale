@@ -5,7 +5,12 @@
 </p>
 
 <p align="center">
-  A local-first native macOS workspace for managing App Store Connect and Google Play.
+  <strong>Ship iOS and Android apps from one native macOS workspace.</strong>
+</p>
+
+<p align="center">
+  Manage App Store Connect and Google Play listings, screenshots, releases,
+  pricing, products, and reviews without living in two browser consoles.
 </p>
 
 <p align="center">
@@ -14,258 +19,165 @@
   <img alt="Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue">
 </p>
 
+<p align="center">
+  <a href="https://www.useescale.com/">Website</a> ·
+  <a href="https://www.useescale.com/">Download Escale</a> ·
+  <a href="#community-or-pro">Compare editions</a> ·
+  <a href="https://litefeedback.com/roadmap/Escale">Feedback and roadmap</a>
+</p>
+
+Escale connects directly to the official Apple and Google APIs. Credentials stay
+in macOS Keychain, fetched workspace data is cached locally, and remote changes
+remain explicit: you review the work before Escale writes it to a store.
+
+## What you can do
+
+- Link matching iOS and Android apps in one workspace.
+- Edit localized store listings while keeping each platform's copy separate.
+- Translate a complete listing or one field with your own OpenAI API key.
+- Generate correctly tagged Google Play release notes.
+- Upload, inspect, and remove screenshots for both stores.
+- Create editable App Store versions without submitting them for review.
+- Read in-app products and subscriptions from Apple and Google.
+- Calculate store-valid regional prices using Worldwide PPP, Netflix, or Big Mac
+  indices.
+- Read customer reviews and publish developer replies.
+- Follow progress and partial failures during long-running store operations.
+
+Demo mode is clearly identified and never writes to a remote store.
+
+## Community or Pro?
+
+**Escale Community** is the application in this repository. It is free,
+open-source under Apache-2.0, and provides a complete manual workflow with no
+trial deadline: one developer account per store, unlimited linked apps, manual
+listing and screenshot management, reviews and replies, single-locale
+translation, and PPP price calculation and preview.
+
+> [!TIP]
+> **Spend less time repeating store work with [Escale Pro](https://www.useescale.com/).**
+>
+> Pro includes everything in Community, then adds bulk translation across every
+> locale, one-click regional price application, reusable What's New templates,
+> multiple developer accounts, Google Play bundle upload and draft creation,
+> pricing history and audit logs, scheduled operations, and agency workflows.
+>
+> Escale Pro is currently **$99/year for one user on up to two Macs** and includes
+> current and future Pro features while the subscription is active.
+> [Explore Escale Pro →](https://www.useescale.com/)
+
+| Capability | Community | Pro |
+| --- | --- | --- |
+| Store listings, screenshots, reviews, and replies | Manual | Manual |
+| Linked applications | Unlimited | Unlimited |
+| Developer accounts | One per store | Multiple |
+| App Store version creation | Included | Included |
+| Google Play bundle upload and draft creation | — | Included |
+| AI-assisted translation | One locale at a time | Every app locale |
+| What's New templates | — | Included |
+| PPP regional pricing | Calculate and preview | Apply to both stores |
+| Synchronization | Manual | Scheduled automation |
+| Pricing history and operational audit log | — | Included |
+| Agency workflows | — | Included |
+
+The Community source and reusable `EscaleCore` and `EscaleUI` libraries remain
+Apache-2.0 licensed. Escale Pro is a separate commercial distribution with
+proprietary licensing and implementation. See
+[the edition architecture](Documentation/EDITIONS.md) for the technical boundary.
+
+## Before using a production account
+
 > [!CAUTION]
-> **Escale is experimental software under active development. Use it entirely at your own risk.**
->
-> Escale connects to live production accounts and can remotely modify store listings, screenshots, in-app product and subscription pricing, subscriber price behavior, localizations, and public review replies. A defect, API change, incorrect permission, misunderstood option, or user error may cause financial loss, rejected releases, unintended review submissions, incorrect prices, lost metadata, or other production impact.
->
-> Always verify proposed changes in App Store Connect and Google Play Console, keep independent copies of important metadata, use least-privilege credentials, and test with non-critical apps and products first. You are solely responsible for every credential supplied and every remote operation performed with this software.
->
-> Escale is provided **without warranty of any kind**. To the maximum extent permitted by applicable law, its authors and contributors are not liable for damages or losses arising from its use. See the [Apache-2.0 licence](LICENSE), particularly its warranty and liability provisions.
+> **Escale is experimental software under active development. Use it at your own
+> risk and verify consequential changes in the official store console.**
 
-## Project status
+Escale can remotely change public metadata, screenshots, prices, subscriber
+price behavior, releases, and review replies. Apple or Google API changes,
+incorrect permissions, defects, or user error can cause production impact.
+Use least-privilege credentials, keep copies of important metadata, and start
+with a non-critical app. There is no automatic rollback and no stable-release
+compatibility promise.
 
-Escale started as an experiment in building a useful native developer tool with AI-assisted development. It is now open source so that its behavior can be inspected, tested, improved, and adapted by the community.
-
-It is not a finished or audited production product:
-
-- Apple and Google can change their APIs and review behavior without notice.
-- Not every account configuration, product state, locale, territory, or historical pricing schedule has been tested.
-- A successful API response does not replace checking the resulting state in the official store console.
-- There is currently no stable-release compatibility promise.
-
-Review the code paths relevant to your workflow before granting access to valuable production accounts.
-
-## What Escale does
-
-- Connects directly to App Store Connect using an Issuer ID, Key ID, and `.p8` Team API key.
-- Connects directly to Google Play using a Google Cloud service-account JSON document.
-- Imports live apps and pairs iOS and Android records automatically or manually.
-- Caches fetched workspace data locally and refreshes it only when requested.
-- Reads and edits localized store metadata while keeping Apple and Google copy separate.
-- Creates editable App Store versions without submitting them for review.
-- Translates complete listings or individual fields using the user's own OpenAI API key.
-- Generates localized Google Play release-note blocks with `<language-tag>` markup.
-- Reads, uploads, and deletes store screenshots.
-- Reads in-app products and subscriptions from both stores.
-- Calculates regional pricing using Worldwide PPP, Netflix, or Big Mac indices.
-- Applies reviewed regional prices through the official store APIs.
-- Reads customer reviews and posts developer replies.
-- Shows progress and partial failures for long-running store operations.
-
-Normal operation uses live APIs. Demo mode is clearly identified and does not write to remote stores.
-
-## Important remote-operation behavior
-
-Understand these behaviors before connecting a production account:
-
-- **Save to stores** writes listing metadata remotely.
-- Creating an iOS version creates an editable metadata version but does not submit it for App Review.
-- Escale first asks Google Play to keep listing edits out of review. Accounts configured for automatic review may reject that option and require Google to send the edit for review automatically. Escale reports when this happens.
-- Screenshot deletion removes the remote screenshot before removing it from the local gallery.
-- **Apply new pricing** changes production product or subscription pricing in the selected territories.
-- Apple may automatically pass subscription price decreases to existing subscribers even when price preservation is selected.
-- Google subscriber migration is a separate explicit operation and may notify or otherwise affect subscribers.
-- Review replies are public responses posted through the relevant store.
-- Google Play tagged release notes are stored locally for the bundle-upload workflow; they are not published by the listing save action.
-
-There is no automatic rollback. Keep a record of the previous state before applying consequential changes.
-
-## Reduce App Review back-and-forth
-
-> **Shipping an iOS app? [AcceptMyApp](https://acceptmy.app/) helps you spot App Review risks before submitting.**
->
-> It provides a personalized pre-submission checklist, guideline risk analysis, review-friendly metadata suggestions, and screenshot validation. If Apple has already rejected the app, it can explain the likely cause, help decide whether to fix or appeal, and draft a response for Resolution Center.
->
-> [Check your app with AcceptMyApp →](https://acceptmy.app/)
+The software is provided without warranty. See the
+[Apache-2.0 licence](LICENSE), especially its warranty and liability terms.
 
 ## Requirements
 
 - macOS 14 or newer
-- Xcode 16 or newer
+- Xcode 16 or newer with the Command Line Tools
 - Swift 6
-- Xcode Command Line Tools
-- [ImageMagick](https://imagemagick.org/) for the recommended `.app` build scripts
-- An App Store Connect account and/or Google Play Console account
-- An OpenAI API key only if AI-assisted translation or review-reply drafting is required
+- [ImageMagick](https://imagemagick.org/) for building the `.app` bundle
+- An App Store Connect and/or Google Play Console account
+- An OpenAI API key only for AI-assisted features
 
-Escale has no third-party Swift package dependencies.
+There are no third-party Swift package dependencies.
 
-## Clone and run locally
-
-### 1. Clone the repository
-
-On GitHub, click **Code**, copy the HTTPS repository URL, then run:
+## Run from source
 
 ```bash
 git clone git@github.com:Alex0x47/escale.git
 cd escale
-```
-
-### 2. Install the local build requirement
-
-Install Xcode from the Mac App Store, select its Command Line Tools, and install ImageMagick:
-
-```bash
 brew install imagemagick
-```
-
-If command-line tools are not installed yet:
-
-```bash
-xcode-select --install
-```
-
-### 3. Launch the recommended signed development build
-
-From the repository root:
-
-```bash
 ./scripts/install-git-hooks.sh
 ./scripts/run-app.sh
 ```
 
-The one-time hook installation makes each commit increment Escale's patch
-version automatically. The run script builds a debug `.app`, creates its macOS
-icon, signs it with the first available Apple Development identity, and opens:
+The run script builds `dist/Escale.app`, creates its icon, signs it with the
+first available Apple Development identity, and opens it. If no development
+identity is available, it uses an ad-hoc signature; macOS may then ask for
+Keychain access again after a rebuild.
 
-```text
-dist/Escale.app
-```
-
-To choose a particular signing identity:
+To select a signing identity:
 
 ```bash
 ESCALE_CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" \
 ./scripts/run-app.sh
 ```
 
-If no Apple Development identity is installed, the build script uses an ad-hoc signature. An ad-hoc build can run locally, but macOS may request Keychain permission again after the executable changes.
-
-### SwiftPM alternative
-
-For quick UI work that does not need persistent store credentials:
+For quick UI work that does not need persistent Keychain access:
 
 ```bash
 swift run Escale
 ```
 
-`swift run` launches a raw SwiftPM executable with a changing ad-hoc code identity. Do not use it for normal connected-account workflows: macOS may repeatedly ask whether the rebuilt executable can read credentials from Keychain. Prefer `./scripts/run-app.sh`.
-
-### Xcode alternative
-
-```bash
-open Package.swift
-```
-
-Select the **Escale** scheme and run it as a macOS application.
-
-## Build a standalone app bundle
-
-Create an optimized local bundle:
+To create an optimized standalone bundle:
 
 ```bash
 ./scripts/build-app.sh
 open dist/Escale.app
 ```
 
-The script builds the executable, creates `AppIcon.icns`, assembles the bundle, and signs it with an available Apple Development identity. It falls back to an ad-hoc signature when necessary.
+Distributing a trusted build to other Macs requires your own Developer ID
+certificate, hardened-runtime configuration, and Apple notarization.
 
-An Apple Development signature is suitable for local development. Distributing a trusted build to other Macs requires your own Developer ID Application certificate, hardened runtime configuration, and Apple notarization. This repository does not provide a shared signing identity or notarized binary.
+## Connect your stores
 
-## Versioning Escale
+### App Store Connect
 
-Escale's semantic version is stored in the root [`VERSION`](VERSION) file. The
-tracked pre-commit hook increments the patch component for every commit:
-`0.1.1` becomes `0.1.2`, for example. Install the hook once in each clone:
+Create a Team API key under **Users and Access → Integrations**, then add its
+Issuer ID, Key ID, and `.p8` file in Escale. App Manager access is the usual
+starting point; grant only the access your workflows need.
 
-```bash
-./scripts/install-git-hooks.sh
-```
+[Apple's App Store Connect API setup guide](https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api)
 
-To choose a new major or minor version, edit and stage `VERSION` before
-committing. The hook accepts any valid version higher than the previous one and
-does not add another patch increment to that commit.
+### Google Play
 
-`scripts/build-app.sh` writes this semantic version to
-`CFBundleShortVersionString`. It derives the separate `CFBundleVersion` build
-number from the Git commit count. Release automation can override the build
-number with a positive integer:
+Enable the Google Play Android Developer API, create a Google Cloud service
+account, invite its email under **Play Console → Users and permissions**, and
+grant access only to the required apps and features. Add the exact Android
+package names in Escale because the publishing API cannot enumerate every app
+in an account.
 
-```bash
-ESCALE_BUILD_NUMBER=42 ./scripts/build-app.sh
-```
+[Google's Android Publisher API setup guide](https://developers.google.com/android-publisher/getting_started)
 
-Git hooks can be bypassed with `--no-verify`, so code review or CI should reject
-commits that do not advance `VERSION`.
+### Optional AI features
 
-## Run tests
+Add your own [OpenAI API key](https://platform.openai.com/api-keys) in Escale
+Settings. Requests go directly from the Mac to OpenAI, and usage is billed to
+the account that owns the key. Always review generated translations and reply
+drafts before publishing them.
 
-```bash
-swift test
-```
-
-The default suite tests domain behavior, response decoding, persistence rules, pricing decisions, and local JWT signing without changing store data.
-
-Optional live smoke tests run only when their environment variables are supplied:
-
-```bash
-ESCALE_APPLE_ISSUER_ID="..." \
-ESCALE_APPLE_KEY_ID="..." \
-ESCALE_APPLE_P8_PATH="/absolute/path/AuthKey_ABC123.p8" \
-ESCALE_GOOGLE_SERVICE_ACCOUNT_PATH="/absolute/path/service-account.json" \
-ESCALE_GOOGLE_PACKAGE="com.company.product" \
-ESCALE_OPENAI_API_KEY="sk-..." \
-swift test
-```
-
-Without those variables, live tests return without contacting Apple, Google, or OpenAI. The live Google test opens and deletes a temporary Play edit; it does not commit it. The OpenAI smoke test checks model access without generating a translation.
-
-Never commit credential files or paste private keys into tests, issues, screenshots, or logs.
-
-## Configure App Store Connect
-
-1. Open **Users and Access → Integrations** in App Store Connect.
-2. If necessary, the Account Holder must request App Store Connect API access.
-3. Under **Team Keys**, generate an API key with the access required for the intended workflows. App Manager access is the normal starting point; use broader access only when genuinely required.
-4. Copy the **Issuer ID** and **Key ID**.
-5. Download the `.p8` private key. Apple allows it to be downloaded only once.
-6. In Escale, enter both identifiers, choose the matching `.p8` file, and connect.
-
-Official instructions: [Get started with the App Store Connect API](https://developer.apple.com/help/app-store-connect/get-started/app-store-connect-api).
-
-Escale signs short-lived ES256 JWTs locally. Apple credentials are stored in macOS Keychain, not in the repository or workspace cache.
-
-## Configure Google Play
-
-1. Create or select a Google Cloud project.
-2. Enable the **Google Play Android Developer API**.
-3. Create a service account.
-4. Create and download a JSON key for that service account.
-5. In Play Console, open **Users and permissions** and invite the service-account email.
-6. Grant access only to the required apps.
-7. Grant the feature permissions required for the intended workflows, such as app information, store presence, releases, review replies, and product/subscription management.
-8. Choose the JSON file in Escale and connect.
-9. Add each exact Android package name. The publishing API cannot enumerate every app in an account.
-
-Official instructions: [Google Play Developer API getting started](https://developers.google.com/android-publisher/getting_started).
-
-Escale signs an RS256 service-account assertion locally and exchanges it for an in-memory OAuth token. The service-account document is stored in macOS Keychain.
-
-## Configure AI translation
-
-AI features are optional and use an API key belonging to the user:
-
-1. Create an API key in the [OpenAI dashboard](https://platform.openai.com/api-keys).
-2. Open Escale Settings.
-3. Save the key in the **OpenAI** section.
-4. Optionally run **Test connection**.
-
-Requests go directly from the Mac to `api.openai.com` over HTTPS. The key is stored in Keychain and is never added to workspace data or logs. API usage is billed by OpenAI to the account owning the key.
-
-AI output can be incorrect, misleading, culturally inappropriate, or too long despite validation attempts. Review every translation and reply draft before publishing it.
-
-## Local data and credentials
+## Local data and security
 
 | Data | Storage |
 | --- | --- |
@@ -273,91 +185,68 @@ AI output can be incorrect, misleading, culturally inappropriate, or too long de
 | Google service-account document | macOS Keychain |
 | OpenAI API key | macOS Keychain |
 | OAuth access tokens | Process memory only |
-| Imported store data and pending edits | Local `UserDefaults` workspace cache |
+| Imported data and pending edits | Local workspace cache |
 | Generated Google Play release notes | Local workspace cache |
 
-Disconnecting a store removes its saved credential from Keychain. Cached app data remains locally until the workspace is replaced or cleared.
+Disconnecting a store removes its credential from Keychain. Escale is
+local-first, but connected workflows necessarily send requests to Apple,
+Google, public pricing-data sources, and—when you invoke an AI action—OpenAI.
+Never commit credentials or include real secrets in issues, screenshots, or
+logs.
 
-Escale is local-first, but it necessarily sends requests to Apple, Google, public pricing-data sources, and—only when an AI action is requested—OpenAI.
-
-## PPP pricing data
-
-Pricing suggestions may use:
-
-- [World Bank Indicator API](https://datahelpdesk.worldbank.org/knowledgebase/articles/898599-indicator-api-queries)
-- [The Economist Big Mac dataset](https://github.com/TheEconomist/big-mac-data)
-- [Netflix prices dataset](https://github.com/tompec/netflix-prices)
-
-These are heuristic inputs, not financial advice. Dataset coverage, exchange rates, taxes, store conventions, and purchasing power can change. Suggested prices may be commercially unsuitable even when accepted by a store API.
-
-## Troubleshooting
-
-- **Repeated Keychain prompts:** launch with `./scripts/run-app.sh` and keep the same Apple Development signing identity.
-- **Apple 401:** verify that the Issuer ID, Key ID, and `.p8` file belong to the same Team API key.
-- **Apple 403:** review the key's App Store Connect role and app access.
-- **Apple metadata is read-only:** create or select an editable App Store version.
-- **Google authentication succeeds but app import fails:** enable Android Publisher API access and invite the exact service-account email in Play Console.
-- **Google 403 for one feature:** Play permissions are feature-specific. Grant the relevant store-presence, release, review, or monetization permission.
-- **Google edit conflict:** refresh the selected app and retry with a new edit.
-- **Screenshot rejected:** verify device target, pixel dimensions, format, file size, and store count limits.
-- **Price rejected:** verify store price-point rules, currency, territory availability, tax behavior, and subscriber-consent requirements.
-- **OpenAI request rejected:** verify the key, project access, billing, usage limits, and configured model availability.
-
-## Project structure
+## Development
 
 ```text
 Sources/
-├── EscaleCore/                   # Public domain, API, security, and state library
-├── EscaleUI/                     # Public reusable SwiftUI screens and app shell
-└── EscaleCommunityApp/           # Thin community-edition executable and resources
+├── EscaleCore/                   # Models, APIs, security, persistence, orchestration
+├── EscaleUI/                     # Reusable SwiftUI screens and app shell
+└── EscaleCommunityApp/           # Community executable and resources
 
 Tests/EscaleCoreTests/             # Domain, decoding, crypto, and smoke tests
 scripts/run-app.sh                 # Recommended local development launch
 scripts/build-app.sh               # Standalone app-bundle assembly
 ```
 
-## Community and commercial editions
+Run the test suite with:
 
-The package deliberately separates reusable product code from the executable:
+```bash
+swift test
+```
 
-- `EscaleCore` owns the models, store clients, credentials, persistence, and orchestration.
-- `EscaleUI` depends on `EscaleCore` and owns the reusable community screens.
-- `EscaleCommunityApp` depends on both libraries and contains only the macOS entry point and application resources.
+The default tests do not change store data. Optional live smoke tests run only
+when their documented environment variables are supplied in the test code.
 
-A private commercial repository should depend on the public package's `EscaleCore` and `EscaleUI` products, then add `EscaleProKit` and its own thin `EscaleProApp` executable. It should not copy shared files. A bug affecting both editions is fixed and tested here once; the commercial repository then updates its pinned package revision. Commercial-only code never enters this repository, so updating the shared dependency cannot publish it accidentally.
-
-See [Maintaining community and commercial editions](Documentation/EDITIONS.md) for the dependency and release workflow.
-See [Escale editions and feature boundaries](Documentation/FEATURES.md) for the Community and Pro capability matrix.
+Escale's semantic version is stored in [`VERSION`](VERSION). The tracked
+pre-commit hook increments its patch version on each commit, so install the hook
+once per clone with `./scripts/install-git-hooks.sh`.
 
 ## Contributing
 
-Contributions are welcome, especially:
+Contributions are welcome, particularly reproducible API fixes, store-response
+fixtures, safer validation and confirmation flows, accessibility improvements,
+tests, and documentation corrections.
 
-- Reproducible fixes for Apple or Google API edge cases
-- Additional store-state and response fixtures
-- Safer previews, validations, and confirmation flows
-- Accessibility improvements
-- Documentation corrections
+1. Fork the repository and create a focused branch.
+2. Make the change without adding credentials or production data.
+3. Add or update tests where appropriate.
+4. Run `swift test`.
+5. Open a pull request describing the affected remote behavior and verification.
 
-Suggested workflow:
-
-1. Fork the repository.
-2. Create a focused branch.
-3. Make the change without adding credentials or production data.
-4. Add or update tests.
-5. Run `swift test`.
-6. Open a pull request describing the remote behavior affected and how it was verified.
-
-For feature ideas and general feedback, use the [Escale feedback board](https://litefeedback.com/roadmap/Escale). Security issues involving a possible credential leak should not be posted with real secrets or tokens. Revoke any exposed credential immediately.
+Use the [feedback board](https://litefeedback.com/roadmap/Escale) for feature
+ideas. If a credential may have leaked, revoke it immediately and do not post it
+in a public issue.
 
 ## Licence
 
-Escale is open-source software licensed under the [Apache License 2.0](LICENSE), using the SPDX identifier `Apache-2.0`.
-
-You may use, inspect, modify, and redistribute it—including as part of a proprietary product—subject to the licence terms. Redistributions must retain the required licence and attribution notices, and modified files must carry prominent change notices. The licence includes an express patent grant but does not grant rights to the Escale name or trademarks. The software is provided without warranty, and the licence contains limitations of liability.
+Escale Community is licensed under the
+[Apache License 2.0](LICENSE) (`Apache-2.0`). You may use, inspect, modify, and
+redistribute it, including in proprietary products, subject to the licence
+terms. Required licence and attribution notices must be retained, and modified
+files must carry prominent change notices. The licence includes an express
+patent grant but does not grant rights to the Escale name or trademarks.
 
 Copyright © 2026 Alexandre Grisey and Escale contributors.
 
-## Non-affiliation
-
-Escale is an independent open-source project. It is not affiliated with, endorsed by, or sponsored by Apple, Google, OpenAI, Netflix, The Economist, or the World Bank. Product names and trademarks belong to their respective owners.
+Escale is independent and is not affiliated with, endorsed by, or sponsored by
+Apple, Google, OpenAI, Netflix, The Economist, or the World Bank. Their product
+names and trademarks belong to their respective owners.

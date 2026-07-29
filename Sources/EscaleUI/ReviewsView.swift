@@ -19,11 +19,21 @@ public struct ReviewsView: View {
         }
     }
 
-    private var loadedAverageRating: String {
-        let reviews = store.selectedReviews.filter { store.platformFilter.platforms.contains($0.platform) }
-        guard !reviews.isEmpty else { return "—" }
-        let average = Double(reviews.map(\.rating).reduce(0, +)) / Double(reviews.count)
-        return average.formatted(.number.precision(.fractionLength(1)))
+    private var ratingSummary: StoreRatingSummary? {
+        store.selectedRatingSummary(for: store.platformFilter.platforms)
+    }
+
+    private var averageRating: String {
+        guard let ratingSummary else { return "—" }
+        return ratingSummary.averageRating.formatted(.number.precision(.fractionLength(1)))
+    }
+
+    private var ratingDetail: String {
+        let loadedReviewCount = store.selectedReviews.filter {
+            store.platformFilter.platforms.contains($0.platform)
+        }.count
+        guard let ratingSummary else { return "· \(loadedReviewCount.formatted()) loaded reviews" }
+        return "· \(ratingSummary.ratingCount.formatted()) ratings · \(loadedReviewCount.formatted()) loaded reviews"
     }
 
     public var body: some View {
@@ -50,9 +60,9 @@ public struct ReviewsView: View {
             SectionTitle("Customer reviews", subtitle: "Listen and respond across both stores.", eyebrow: "Reputation")
             Spacer()
             HStack(spacing: 5) {
-                Text(loadedAverageRating).font(.title2.weight(.bold).monospacedDigit())
+                Text(averageRating).font(.title2.weight(.bold).monospacedDigit())
                 Image(systemName: "star.fill").foregroundStyle(.orange)
-                Text("· \(store.selectedReviews.filter { store.platformFilter.platforms.contains($0.platform) }.count) loaded reviews")
+                Text(ratingDetail)
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

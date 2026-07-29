@@ -1,15 +1,3 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
-  <rect x="52" y="52" width="920" height="920" rx="218" fill="#7064E8"/>
-  <path d="M270 52H754C874 52 972 150 972 270V343C711 205 376 202 52 373V270C52 150 150 52 270 52Z" fill="white" fill-opacity=".11"/>
-
-  <rect x="481" y="256" width="62" height="392" rx="31" fill="white"/>
-  <path d="M522 273C636 216 738 239 826 303C742 354 644 366 522 326Z" fill="#F27D66"/>
-
-  <path d="M394 643C394 573 447 520 512 520C577 520 630 573 630 643V680H394Z" fill="white"/>
-  <path d="M365 674H659L682 754C694 798 661 842 615 842H409C363 842 330 798 342 754Z" fill="white"/>
-
-  <rect x="184" y="760" width="188" height="34" rx="17" fill="white" fill-opacity=".38"/>
-  <rect x="652" y="760" width="188" height="34" rx="17" fill="white" fill-opacity=".38"/>
-  <rect x="257" y="818" width="120" height="24" rx="12" fill="white" fill-opacity=".20"/>
-  <rect x="647" y="818" width="120" height="24" rx="12" fill="white" fill-opacity=".20"/>
+  <image href="AppIcon.png" width="1024" height="1024"/>
 </svg>

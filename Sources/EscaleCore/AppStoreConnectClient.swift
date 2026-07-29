@@ -54,6 +54,13 @@ private struct ITunesSoftwareResult: Decodable, Sendable {
     var bundleId: String?
     var artworkUrl512: String?
     var artworkUrl100: String?
+    var averageUserRating: Double?
+    var userRatingCount: Int?
+}
+
+private struct ITunesPublicMetadata: Sendable {
+    var artworkURL: String?
+    var ratingSummary: StoreRatingSummary?
 }
 
 public struct SubscriptionPriceCandidate: Sendable {
@@ -166,9 +173,11 @@ public struct AppStoreConnectClient: Sendable {
             }
             url = page.dictionary("links").string("next").flatMap(URL.init(string:))
         } while url != nil
-        let artworkURLs = await fetchArtworkURLs(for: apps)
+        let publicMetadata = await fetchPublicMetadata(for: apps)
         for index in apps.indices {
-            apps[index].iconURL = artworkURLs[apps[index].storeID] ?? artworkURLs[apps[index].bundleID]
+            let metadata = publicMetadata[apps[index].storeID] ?? publicMetadata[apps[index].bundleID]
+            apps[index].iconURL = metadata?.artworkURL
+            apps[index].ratingSummary = metadata?.ratingSummary
         }
         return apps
     }
@@ -179,9 +188,14 @@ public struct AppStoreConnectClient: Sendable {
         if app.primaryLocale == nil {
             app.primaryLocale = try? await appPrimaryLocale(appID: app.storeID)
         }
-        if app.iconURL == nil {
-            let artworkURLs = await fetchArtworkURLs(for: [app])
-            app.iconURL = artworkURLs[app.storeID] ?? artworkURLs[app.bundleID]
+        let publicMetadata = await fetchPublicMetadata(for: [app])
+        if let metadata = publicMetadata[app.storeID] ?? publicMetadata[app.bundleID] {
+            if app.iconURL == nil {
+                app.iconURL = metadata.artworkURL
+            }
+            if let ratingSummary = metadata.ratingSummary {
+                app.ratingSummary = ratingSummary
+            }
         }
         var warnings: [String] = []
         var unavailableSections: Set<StoreDataSection> = []
@@ -1036,8 +1050,8 @@ public struct AppStoreConnectClient: Sendable {
         try await request(url: baseURL.appending(path: path).appendingQueryItems(query), method: method, body: body)
     }
 
-    private func fetchArtworkURLs(for apps: [StoreApp]) async -> [String: String] {
-        var artworkByIdentifier: [String: String] = [:]
+    private func fetchPublicMetadata(for apps: [StoreApp]) async -> [String: ITunesPublicMetadata] {
+        var metadataByIdentifier: [String: ITunesPublicMetadata] = [:]
         var unresolved: [String: String] = [:]
         for app in apps where !app.storeID.isEmpty {
             unresolved[app.storeID] = app.bundleID
@@ -1057,27 +1071,39 @@ public struct AppStoreConnectClient: Sendable {
                     URLQueryItem(name: "country", value: country)
                 ]
                 guard let url = components?.url,
-                      let response = try? await HTTPTransport.send(url: url),
+                      let response = try? await HTTPTransport.send(url: url, timeout: 15),
                       let lookup = try? JSONDecoder().decode(ITunesLookupResponse.self, from: response.data) else { continue }
 
                 for result in lookup.results {
-                    guard let artworkURL = result.artworkUrl512 ?? result.artworkUrl100 else { continue }
+                    let ratingSummary: StoreRatingSummary? = if let averageRating = result.averageUserRating,
+                                                                let ratingCount = result.userRatingCount,
+                                                                ratingCount > 0,
+                                                                averageRating.isFinite,
+                                                                (0...5).contains(averageRating) {
+                        StoreRatingSummary(averageRating: averageRating, ratingCount: ratingCount)
+                    } else {
+                        nil
+                    }
+                    let metadata = ITunesPublicMetadata(
+                        artworkURL: result.artworkUrl512 ?? result.artworkUrl100,
+                        ratingSummary: ratingSummary
+                    )
                     let storeID = result.trackId.map(String.init)
                     if let storeID {
-                        artworkByIdentifier[storeID] = artworkURL
+                        metadataByIdentifier[storeID] = metadata
                         unresolved.removeValue(forKey: storeID)
                     }
                     if let bundleID = result.bundleId {
-                        artworkByIdentifier[bundleID] = artworkURL
+                        metadataByIdentifier[bundleID] = metadata
                         if let matchingID = unresolved.first(where: { $0.value == bundleID })?.key {
-                            artworkByIdentifier[matchingID] = artworkURL
+                            metadataByIdentifier[matchingID] = metadata
                             unresolved.removeValue(forKey: matchingID)
                         }
                     }
                 }
             }
         }
-        return artworkByIdentifier
+        return metadataByIdentifier
     }
 
     private func request(url: URL, method: String = "GET", body: Data? = nil) async throws -> JSONObject {

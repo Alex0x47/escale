@@ -157,6 +157,14 @@ public final class WorkspaceStore: ObservableObject {
     public var selectedScreenshots: [StoreScreenshot] { selectedAppID.flatMap { workspace.screenshotsByApp[$0] } ?? [] }
     public var selectedProducts: [StoreProduct] { selectedAppID.flatMap { workspace.productsByApp[$0] } ?? [] }
     public var selectedReviews: [CustomerReview] { selectedAppID.flatMap { workspace.reviewsByApp[$0] } ?? [] }
+    public func selectedRatingSummary(for platforms: Set<StorePlatform> = Set(StorePlatform.allCases)) -> StoreRatingSummary? {
+        guard let app = selectedApp else { return nil }
+        let summaries = [
+            platforms.contains(.appStore) ? app.appStoreApp?.ratingSummary : nil,
+            platforms.contains(.playStore) ? app.playStoreApp?.ratingSummary : nil
+        ].compactMap { $0 }
+        return combinedStoreRatingSummary(summaries)
+    }
     public var isSelectedAppLoading: Bool { selectedAppID.map(loadingAppIDs.contains) ?? false }
     public var selectedAppSyncIssues: [String] { selectedAppID.flatMap { appSyncIssues[$0] } ?? [] }
     public var selectedAppHasLiveData: Bool { selectedAppID.map(loadedAppIDs.contains) ?? false }
@@ -786,15 +794,6 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     public func createAppStoreVersion(_ versionString: String) async -> Bool {
-        guard entitlements.plan == .pro else {
-            track(.proGateViewed(feature: .createAppStoreVersion))
-            showToast(
-                "Escale Pro required",
-                detail: EscaleFeature.createAppStoreVersion.upgradeDescription,
-                kind: .neutral
-            )
-            return false
-        }
         guard let appID = selectedAppID,
               let appIndex = workspace.apps.firstIndex(where: { $0.id == appID }),
               let appleApp = workspace.apps[appIndex].appStoreApp else { return false }
@@ -1658,9 +1657,16 @@ public final class WorkspaceStore: ObservableObject {
         let appID: UUID
         if let index = existingIndex {
             appID = workspace.apps[index].id
-            if platform == .appStore { workspace.apps[index].appStoreApp = snapshot.app }
-            else { workspace.apps[index].playStoreApp = snapshot.app }
-            if workspace.apps[index].name.isEmpty || platform == .appStore { workspace.apps[index].name = snapshot.app.name }
+            var refreshedApp = snapshot.app
+            let cachedRatingSummary = platform == .appStore
+                ? workspace.apps[index].appStoreApp?.ratingSummary
+                : workspace.apps[index].playStoreApp?.ratingSummary
+            if refreshedApp.ratingSummary == nil {
+                refreshedApp.ratingSummary = cachedRatingSummary
+            }
+            if platform == .appStore { workspace.apps[index].appStoreApp = refreshedApp }
+            else { workspace.apps[index].playStoreApp = refreshedApp }
+            if workspace.apps[index].name.isEmpty || platform == .appStore { workspace.apps[index].name = refreshedApp.name }
         } else {
             let unified = UnifiedApp(
                 id: UUID(), name: snapshot.app.name, symbol: "app.fill", tintHex: colorHex(for: snapshot.app.bundleID),

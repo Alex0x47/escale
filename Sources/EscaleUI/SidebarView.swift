@@ -21,12 +21,8 @@ public struct SidebarView: View {
         VStack(spacing: 0) {
             VStack(spacing: 14) {
                 HStack(spacing: 10) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(LinearGradient(colors: [Theme.accent, Color(hex: 0x978BFF)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        Image(systemName: "helm").font(.system(size: 18, weight: .bold)).foregroundStyle(.white)
-                    }
-                    .frame(width: 36, height: 36)
+                    EscaleAppIcon(size: 36)
+                        .shadow(color: .black.opacity(0.16), radius: 5, y: 2)
                     VStack(alignment: .leading, spacing: 0) {
                         Text("Escale").font(.headline)
                         Text("Store operations").font(.caption).foregroundStyle(.secondary)
@@ -105,35 +101,27 @@ public struct SidebarView: View {
                             Button {
                                 pairingRequest = AppPairingRequest(appID: app.id)
                             } label: {
-                                HStack(spacing: 10) {
+                                HStack(spacing: 7) {
                                     Image(systemName: "link.badge.plus")
-                                        .font(.system(size: 14, weight: .semibold))
-                                        .foregroundStyle(Theme.accent)
-                                        .frame(width: 30, height: 30)
-                                        .background(Theme.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Pair this app")
-                                            .font(.caption.weight(.semibold))
-                                            .foregroundStyle(.primary)
-                                        Text(app.appStoreApp == nil ? "Add its App Store version" : "Add its Google Play version")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-                                    }
+                                        .font(.caption.weight(.semibold))
+                                    Text("Pair this app")
+                                        .font(.caption.weight(.semibold))
                                     Spacer()
                                     Image(systemName: "chevron.right")
                                         .font(.caption2.weight(.bold))
-                                        .foregroundStyle(Theme.accent)
                                 }
-                                .padding(10)
-                                .background(Theme.accent.opacity(0.045), in: RoundedRectangle(cornerRadius: 11))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 11)
-                                        .stroke(Theme.accent.opacity(0.2))
-                                )
+                                .foregroundStyle(Theme.accent)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 7)
+                                .background(Theme.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            .help("Pair this product with its record from the other store")
+                            .help(
+                                app.appStoreApp == nil
+                                    ? "Pair this product with its App Store record"
+                                    : "Pair this product with its Google Play record"
+                            )
                         }
                     }
                     .padding(14)

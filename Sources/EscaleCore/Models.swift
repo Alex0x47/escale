@@ -64,6 +64,7 @@ public struct StoreApp: Identifiable, Codable, Hashable, Sendable {
     public var remoteState: String? = nil
     public var primaryLocale: String? = nil
     public var versionDetails: StoreVersionDetails? = nil
+    public var ratingSummary: StoreRatingSummary? = nil
 
     public var hasEditableMetadataVersion: Bool {
         guard platform == .appStore else { return true }
@@ -73,6 +74,31 @@ public struct StoreApp: Identifiable, Codable, Hashable, Sendable {
     private static let editableAppStoreStates: Set<String> = [
         "PREPARE_FOR_SUBMISSION", "DEVELOPER_REJECTED", "REJECTED", "METADATA_REJECTED", "INVALID_BINARY"
     ]
+}
+
+public struct StoreRatingSummary: Codable, Hashable, Sendable {
+    public var averageRating: Double
+    public var ratingCount: Int
+
+    public init(averageRating: Double, ratingCount: Int) {
+        self.averageRating = averageRating
+        self.ratingCount = ratingCount
+    }
+}
+
+public func combinedStoreRatingSummary(_ summaries: [StoreRatingSummary]) -> StoreRatingSummary? {
+    let validSummaries = summaries.filter {
+        $0.ratingCount > 0 && $0.averageRating.isFinite && (0...5).contains($0.averageRating)
+    }
+    let ratingCount = validSummaries.reduce(0) { $0 + $1.ratingCount }
+    guard ratingCount > 0 else { return nil }
+    let weightedTotal = validSummaries.reduce(0.0) {
+        $0 + ($1.averageRating * Double($1.ratingCount))
+    }
+    return StoreRatingSummary(
+        averageRating: weightedTotal / Double(ratingCount),
+        ratingCount: ratingCount
+    )
 }
 
 public func suggestedNextAppStoreVersion(from version: String) -> String {

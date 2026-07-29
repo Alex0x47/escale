@@ -88,12 +88,14 @@ public struct GooglePlayClient: Sendable {
             await progress?(StoreFetchProgress(completed: 1, total: 4, detail: "Fetching listings, release status, reviews, and products…"))
             async let listingResult = fetchListings(packageName: packageName, editID: editID)
             async let reviews = fetchReviews(packageName: packageName)
+            async let ratingSummary = fetchPublicRatingSummary(packageName: packageName)
             async let productsResult = fetchProducts(packageName: packageName)
             async let release = fetchRelease(packageName: packageName, editID: editID)
             async let defaultLanguage = fetchDefaultLanguage(packageName: packageName, editID: editID)
             let listings = try await listingResult
             let releaseInfo = try await release
             let reviewItems = try await reviews
+            let publicRatingSummary = await ratingSummary
             let fetchedProducts = await productsResult
             let primaryLocale = try await defaultLanguage
             await progress?(StoreFetchProgress(completed: 2, total: 4, detail: "Fetching screenshot galleries…"))
@@ -108,7 +110,7 @@ public struct GooglePlayClient: Sendable {
                 id: UUID(), platform: .playStore, name: appName, bundleID: packageName, storeID: packageName,
                 version: releaseInfo.version, state: releaseInfo.state, versionID: nil, appInfoID: nil,
                 remoteState: releaseInfo.remoteState, primaryLocale: primaryLocale,
-                versionDetails: releaseInfo.details
+                versionDetails: releaseInfo.details, ratingSummary: publicRatingSummary
             )
             await progress?(StoreFetchProgress(completed: 4, total: 4, detail: "Applying the live Google Play data…"))
             return StoreSnapshot(
@@ -485,6 +487,34 @@ public struct GooglePlayClient: Sendable {
         }
     }
 
+    private func fetchPublicRatingSummary(packageName: String) async -> StoreRatingSummary? {
+        let localRegion = Locale.current.region?.identifier.uppercased()
+        let regions = [localRegion, "US"].compactMap { $0 }.reduce(into: [String]()) { result, region in
+            if !result.contains(region) { result.append(region) }
+        }
+        let language = Locale.current.language.languageCode?.identifier ?? "en"
+
+        for region in regions {
+            var components = URLComponents(string: "https://play.google.com/store/apps/details")
+            components?.queryItems = [
+                URLQueryItem(name: "id", value: packageName),
+                URLQueryItem(name: "hl", value: language),
+                URLQueryItem(name: "gl", value: region)
+            ]
+            guard let url = components?.url,
+                  let response = try? await HTTPTransport.send(
+                    url: url,
+                    headers: ["Accept": "text/html"],
+                    timeout: 15
+                  ),
+                  let summary = googlePlayRatingSummary(fromHTML: response.data) else {
+                continue
+            }
+            return summary
+        }
+        return nil
+    }
+
     private func fetchProducts(packageName: String) async -> GoogleProductsFetchResult {
         var result: [StoreProduct] = []
         var warnings: [String] = []
@@ -810,6 +840,47 @@ public struct GooglePlayClient: Sendable {
     private func encoded(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? value
     }
+}
+
+func googlePlayRatingSummary(fromHTML data: Data) -> StoreRatingSummary? {
+    guard let html = String(data: data, encoding: .utf8),
+          let expression = try? NSRegularExpression(
+            pattern: #"<script\b[^>]*type\s*=\s*["']application/ld\+json["'][^>]*>(.*?)</script>"#,
+            options: [.caseInsensitive, .dotMatchesLineSeparators]
+          ) else {
+        return nil
+    }
+
+    let searchRange = NSRange(html.startIndex..<html.endIndex, in: html)
+    for match in expression.matches(in: html, range: searchRange) {
+        guard let jsonRange = Range(match.range(at: 1), in: html),
+              let jsonData = String(html[jsonRange]).data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
+              let aggregate = object["aggregateRating"] as? [String: Any],
+              let averageRating = storeRatingDouble(aggregate["ratingValue"]),
+              let ratingCount = storeRatingInt(aggregate["ratingCount"]),
+              ratingCount > 0,
+              averageRating.isFinite,
+              (0...5).contains(averageRating) else {
+            continue
+        }
+        return StoreRatingSummary(averageRating: averageRating, ratingCount: ratingCount)
+    }
+    return nil
+}
+
+private func storeRatingDouble(_ value: Any?) -> Double? {
+    if let value = value as? Double { return value }
+    if let value = value as? NSNumber { return value.doubleValue }
+    if let value = value as? String { return Double(value) }
+    return nil
+}
+
+private func storeRatingInt(_ value: Any?) -> Int? {
+    if let value = value as? Int { return value }
+    if let value = value as? NSNumber { return value.intValue }
+    if let value = value as? String { return Int(value) }
+    return nil
 }
 
 public func googleDraftCommitQueryItems() -> [URLQueryItem] {

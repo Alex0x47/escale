@@ -1,3 +1,4 @@
+import AppKit
 import EscaleCore
 import SwiftUI
 
@@ -8,6 +9,19 @@ enum Theme {
     static let border = Color.primary.opacity(0.09)
     static let muted = Color.secondary.opacity(0.72)
     static let accent = Color(hex: 0x6B5CE7)
+}
+
+struct EscaleAppIcon: View {
+    let size: CGFloat
+
+    var body: some View {
+        Image(nsImage: NSApplication.shared.applicationIconImage)
+            .resizable()
+            .interpolation(.high)
+            .aspectRatio(contentMode: .fit)
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
+    }
 }
 
 struct AppMark: View {
@@ -217,10 +231,6 @@ struct MetricCard: View {
                     .foregroundStyle(color)
                     .frame(width: 32, height: 32)
                     .background(color.opacity(0.11), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                Spacer()
-                Image(systemName: "arrow.up.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.tertiary)
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(value).font(.system(size: 25, weight: .bold, design: .rounded))

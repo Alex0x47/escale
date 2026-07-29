@@ -10,12 +10,8 @@ struct NewIOSVersionRequest: Identifiable {
 struct NewIOSVersionSheet: View {
     @EnvironmentObject private var store: WorkspaceStore
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.escaleCommercialActions) private var commercialActions
-    @Environment(\.openURL) private var openURL
     @State private var versionNumber: String
     @State private var isCreating = false
-    @State private var proFeature: EscaleFeature?
-    @State private var showsOfficialDownloadPrompt = false
 
     init(initialVersion: String) {
         _versionNumber = State(initialValue: initialVersion)
@@ -50,7 +46,6 @@ struct NewIOSVersionSheet: View {
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button {
-                    guard unlocksProFeature(.createAppStoreVersion) else { return }
                     isCreating = true
                     Task {
                         if await store.createAppStoreVersion(cleanVersionNumber) {
@@ -67,7 +62,7 @@ struct NewIOSVersionSheet: View {
                     } else {
                         Label(
                             "Create version",
-                            systemImage: hasProPlan ? "plus.circle.fill" : "lock.fill"
+                            systemImage: "plus.circle.fill"
                         )
                     }
                 }
@@ -78,36 +73,6 @@ struct NewIOSVersionSheet: View {
         }
         .padding(24)
         .frame(width: 500)
-        .sheet(item: $proFeature) { feature in
-            ProFeatureSheet(feature: feature)
-        }
-        .alert("Download the official Escale app", isPresented: $showsOfficialDownloadPrompt) {
-            Button("Not now", role: .cancel) {}
-            Button("Open download page") {
-                openURL(Self.downloadPageURL)
-            }
-        } message: {
-            Text("Creating App Store versions is an Escale Pro feature. Download the official app to upgrade; your Community workspace will remain available.")
-        }
-    }
-
-    private static let downloadPageURL = URL(string: "https://escale.app/")!
-
-    private var hasProPlan: Bool {
-        store.entitlements.plan == .pro
-    }
-
-    private func unlocksProFeature(_ feature: EscaleFeature) -> Bool {
-        guard hasProPlan else {
-            store.track(.proGateViewed(feature: feature))
-            if commercialActions == nil {
-                showsOfficialDownloadPrompt = true
-            } else {
-                proFeature = feature
-            }
-            return false
-        }
-        return true
     }
 }
 
@@ -122,7 +87,6 @@ struct NewAndroidVersionSheet: View {
     @State private var bundleSelectionError: String?
     @State private var releaseName = ""
     @State private var releaseTrack: AndroidReleaseTrack = .production
-    @State private var proFeature: EscaleFeature?
     @State private var showsOfficialDownloadPrompt = false
 
     var body: some View {
@@ -133,94 +97,101 @@ struct NewAndroidVersionSheet: View {
                 eyebrow: "Google Play"
             )
 
-            VStack(alignment: .leading, spacing: 9) {
-                Text("SIGNED APP BUNDLE")
-                    .font(.caption2.weight(.bold))
-                    .tracking(0.65)
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 12) {
-                    Image(systemName: bundleURL == nil ? "shippingbox" : "checkmark.seal.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(bundleURL == nil ? Theme.accent : .green)
-                        .frame(width: 38, height: 38)
-                        .background(
-                            (bundleURL == nil ? Theme.accent : Color.green).opacity(0.1),
-                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        )
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(bundleURL?.lastPathComponent ?? "No bundle selected")
-                            .font(.subheadline.weight(.semibold))
-                            .lineLimit(1)
-                        Text("Google Play validates the package name, signing key, and version code.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button(bundleURL == nil ? "Choose .aab…" : "Replace…") {
-                        showingBundleImporter = true
-                    }
-                    .buttonStyle(.bordered)
-                }
-                .padding(14)
-                .background(Theme.card.opacity(0.7), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(Theme.border))
-
-                if let bundleSelectionError {
-                    Label(bundleSelectionError, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
+            if !hasProPlan {
+                proCallout
             }
 
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("TARGET TRACK")
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 9) {
+                    Text("SIGNED APP BUNDLE")
                         .font(.caption2.weight(.bold))
                         .tracking(0.65)
                         .foregroundStyle(.secondary)
-                    Picker("Target track", selection: $releaseTrack) {
-                        ForEach(AndroidReleaseTrack.allCases) { track in
-                            Text(track.title).tag(track)
+                    HStack(spacing: 12) {
+                        Image(systemName: bundleURL == nil ? "shippingbox" : "checkmark.seal.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(bundleURL == nil ? Theme.accent : .green)
+                            .frame(width: 38, height: 38)
+                            .background(
+                                (bundleURL == nil ? Theme.accent : Color.green).opacity(0.1),
+                                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            )
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(bundleURL?.lastPathComponent ?? "No bundle selected")
+                                .font(.subheadline.weight(.semibold))
+                                .lineLimit(1)
+                            Text("Google Play validates the package name, signing key, and version code.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
+                        Spacer()
+                        Button(bundleURL == nil ? "Choose .aab…" : "Replace…") {
+                            showingBundleImporter = true
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    .labelsHidden()
-                    .frame(maxWidth: .infinity)
+                    .padding(14)
+                    .background(Theme.card.opacity(0.7), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).stroke(Theme.border))
+
+                    if let bundleSelectionError {
+                        Label(bundleSelectionError, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
                 }
 
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("RELEASE NAME · OPTIONAL")
-                        .font(.caption2.weight(.bold))
-                        .tracking(0.65)
-                        .foregroundStyle(.secondary)
-                    TextField("Google can derive it from the bundle", text: $releaseName)
-                        .textFieldStyle(.roundedBorder)
-                }
-            }
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("TARGET TRACK")
+                            .font(.caption2.weight(.bold))
+                            .tracking(0.65)
+                            .foregroundStyle(.secondary)
+                        Picker("Target track", selection: $releaseTrack) {
+                            ForEach(AndroidReleaseTrack.allCases) { track in
+                                Text(track.title).tag(track)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: .infinity)
+                    }
 
-            VStack(alignment: .leading, spacing: 6) {
-                let issues = googlePlayReleaseNotesValidationIssues(store.selectedGooglePlayReleaseNotesBlock)
-                let noteCount = googlePlayReleaseNotes(in: store.selectedGooglePlayReleaseNotesBlock)
-                    .filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                    .count
-                Label(
-                    issues.isEmpty
-                        ? "\(noteCount) localized release note\(noteCount == 1 ? "" : "s") will be attached."
-                        : "Release notes are invalid and will be skipped: \(issues[0])",
-                    systemImage: issues.isEmpty ? "text.document" : "exclamationmark.triangle.fill"
-                )
-                .font(.caption)
-                .foregroundStyle(issues.isEmpty ? Color.secondary : Color.orange)
-                Text("The bundle is saved as a draft on \(releaseTrack.title). Existing users will not receive it.")
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("RELEASE NAME · OPTIONAL")
+                            .font(.caption2.weight(.bold))
+                            .tracking(0.65)
+                            .foregroundStyle(.secondary)
+                        TextField("Google can derive it from the bundle", text: $releaseName)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    let issues = googlePlayReleaseNotesValidationIssues(store.selectedGooglePlayReleaseNotesBlock)
+                    let noteCount = googlePlayReleaseNotes(in: store.selectedGooglePlayReleaseNotesBlock)
+                        .filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                        .count
+                    Label(
+                        issues.isEmpty
+                            ? "\(noteCount) localized release note\(noteCount == 1 ? "" : "s") will be attached."
+                            : "Release notes are invalid and will be skipped: \(issues[0])",
+                        systemImage: issues.isEmpty ? "text.document" : "exclamationmark.triangle.fill"
+                    )
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(issues.isEmpty ? Color.secondary : Color.orange)
+                    Text("The bundle is saved as a draft on \(releaseTrack.title). Existing users will not receive it.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
+            .disabled(!hasProPlan)
+            .opacity(hasProPlan ? 1 : 0.55)
 
             HStack {
                 Spacer()
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Button {
-                    guard unlocksProFeature(.uploadGooglePlayBundle) else { return }
                     guard let bundleURL else { return }
                     isCreating = true
                     Task {
@@ -249,11 +220,16 @@ struct NewAndroidVersionSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled((hasProPlan && bundleURL == nil) || isCreating)
+                .disabled(!hasProPlan || bundleURL == nil || isCreating)
             }
         }
         .padding(24)
         .frame(width: 600)
+        .onAppear {
+            if !hasProPlan {
+                store.track(.proGateViewed(feature: .uploadGooglePlayBundle))
+            }
+        }
         .fileImporter(
             isPresented: $showingBundleImporter,
             allowedContentTypes: [UTType(filenameExtension: "aab") ?? .data],
@@ -273,9 +249,6 @@ struct NewAndroidVersionSheet: View {
                 bundleSelectionError = error.localizedDescription
             }
         }
-        .sheet(item: $proFeature) { feature in
-            ProFeatureSheet(feature: feature)
-        }
         .alert("Download the official Escale app", isPresented: $showsOfficialDownloadPrompt) {
             Button("Not now", role: .cancel) {}
             Button("Open download page") {
@@ -292,17 +265,37 @@ struct NewAndroidVersionSheet: View {
         store.entitlements.plan == .pro
     }
 
-    private func unlocksProFeature(_ feature: EscaleFeature) -> Bool {
-        guard hasProPlan else {
-            store.track(.proGateViewed(feature: feature))
-            if commercialActions == nil {
-                showsOfficialDownloadPrompt = true
-            } else {
-                proFeature = feature
+    private var proCallout: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "lock.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.accent)
+                .frame(width: 34, height: 34)
+                .background(Theme.accent.opacity(0.12), in: Circle())
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Android bundle uploads require Pro")
+                    .font(.subheadline.weight(.semibold))
+                Text("Only Escale Pro users can upload Android bundles and create Google Play drafts.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            return false
+            Spacer()
+            Button("Unlock Escale Pro") {
+                if let commercialActions {
+                    commercialActions.openLicenceManagement()
+                } else {
+                    showsOfficialDownloadPrompt = true
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
         }
-        return true
+        .padding(13)
+        .background(Theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .stroke(Theme.accent.opacity(0.22))
+        )
     }
 }
 

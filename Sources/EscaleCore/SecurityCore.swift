@@ -30,10 +30,6 @@ public struct GoogleServiceAccount: Codable, Sendable {
 public enum CredentialStore {
     private static let service = "app.escale.mac.credentials"
     private static let legacyService = "app.gouvernail.mac.credentials"
-    private static let ownedServicePrefixes = [
-        "app.escale.mac.",
-        "app.gouvernail.mac."
-    ]
     private static let appleAccount = "app-store-connect"
     private static let googleAccount = "google-play-service-account"
     private static let openAIAccount = "openai-api-key"
@@ -135,7 +131,9 @@ public enum CredentialStore {
     }
 
     public static func removeAllEscaleItems() throws {
-        try KeychainStore.deleteServices(withPrefixes: ownedServicePrefixes)
+        for item in escaleResetKeychainItems {
+            try KeychainStore.delete(service: item.service, account: item.account)
+        }
         cachedApple = nil
         hasLoadedApple = true
         cachedGoogle = nil
@@ -215,41 +213,23 @@ public enum KeychainStore {
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw APIError.keychain(status) }
     }
-
-    public static func deleteServices(withPrefixes prefixes: [String]) throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecReturnAttributes as String: true,
-            kSecMatchLimit as String: kSecMatchLimitAll
-        ]
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        if status == errSecItemNotFound { return }
-        guard status == errSecSuccess else { throw APIError.keychain(status) }
-
-        let attributes = result as? [[String: Any]] ?? []
-        let services = escaleOwnedKeychainServices(
-            in: attributes.compactMap { $0[kSecAttrService as String] as? String },
-            prefixes: prefixes
-        )
-        for service in services {
-            let deleteQuery: [String: Any] = [
-                kSecClass as String: kSecClassGenericPassword,
-                kSecAttrService as String: service
-            ]
-            let deleteStatus = SecItemDelete(deleteQuery as CFDictionary)
-            guard deleteStatus == errSecSuccess || deleteStatus == errSecItemNotFound else {
-                throw APIError.keychain(deleteStatus)
-            }
-        }
-    }
 }
 
-func escaleOwnedKeychainServices(in services: [String], prefixes: [String]) -> Set<String> {
-    Set(services.filter { service in
-        prefixes.contains(where: service.hasPrefix)
-    })
+struct EscaleKeychainItem: Hashable, Sendable {
+    let service: String
+    let account: String
 }
+
+let escaleResetKeychainItems: Set<EscaleKeychainItem> = [
+    EscaleKeychainItem(service: "app.escale.mac.credentials", account: "app-store-connect"),
+    EscaleKeychainItem(service: "app.escale.mac.credentials", account: "google-play-service-account"),
+    EscaleKeychainItem(service: "app.escale.mac.credentials", account: "openai-api-key"),
+    EscaleKeychainItem(service: "app.gouvernail.mac.credentials", account: "app-store-connect"),
+    EscaleKeychainItem(service: "app.gouvernail.mac.credentials", account: "google-play-service-account"),
+    EscaleKeychainItem(service: "app.gouvernail.mac.credentials", account: "openai-api-key"),
+    EscaleKeychainItem(service: "app.escale.mac.pro-license", account: "active-license"),
+    EscaleKeychainItem(service: "app.escale.mac.pro-promotion", account: "installation-id")
+]
 
 public enum APIError: LocalizedError, Sendable {
     case missingCredentials(StorePlatform)

@@ -13,12 +13,17 @@ private struct TestProEntitlements: EscaleEntitlementProviding {
     }
 }
 
-@Test("Community entitlements keep every Pro capability locked")
+@Test("Community entitlements include iOS version creation but keep Pro capabilities locked")
 func communityEntitlements() {
     let entitlements = CommunityEntitlements()
 
     #expect(entitlements.plan == .community)
-    #expect(EscaleFeature.allCases.allSatisfy { !entitlements.hasAccess(to: $0) })
+    #expect(entitlements.hasAccess(to: .createAppStoreVersion))
+    #expect(
+        EscaleFeature.allCases
+            .filter { $0 != .createAppStoreVersion }
+            .allSatisfy { !entitlements.hasAccess(to: $0) }
+    )
 }
 
 @Test("A private entitlement provider can unlock selected Pro capabilities")
@@ -40,24 +45,17 @@ func extensibleProEntitlements() {
     #expect(!entitlements.hasAccess(to: .multipleDeveloperAccounts))
 }
 
-@Test("A hard reset targets every Escale-owned Keychain service")
+@Test("A hard reset targets every Escale-owned Keychain item")
 func hardResetKeychainScope() {
-    let services = escaleOwnedKeychainServices(
-        in: [
-            "app.escale.mac.credentials",
-            "app.escale.mac.pro-license",
-            "app.escale.mac.pro-promotion",
-            "app.gouvernail.mac.credentials",
-            "com.example.unrelated"
-        ],
-        prefixes: ["app.escale.mac.", "app.gouvernail.mac."]
-    )
-
-    #expect(services == [
-        "app.escale.mac.credentials",
-        "app.escale.mac.pro-license",
-        "app.escale.mac.pro-promotion",
-        "app.gouvernail.mac.credentials"
+    #expect(escaleResetKeychainItems == [
+        EscaleKeychainItem(service: "app.escale.mac.credentials", account: "app-store-connect"),
+        EscaleKeychainItem(service: "app.escale.mac.credentials", account: "google-play-service-account"),
+        EscaleKeychainItem(service: "app.escale.mac.credentials", account: "openai-api-key"),
+        EscaleKeychainItem(service: "app.gouvernail.mac.credentials", account: "app-store-connect"),
+        EscaleKeychainItem(service: "app.gouvernail.mac.credentials", account: "google-play-service-account"),
+        EscaleKeychainItem(service: "app.gouvernail.mac.credentials", account: "openai-api-key"),
+        EscaleKeychainItem(service: "app.escale.mac.pro-license", account: "active-license"),
+        EscaleKeychainItem(service: "app.escale.mac.pro-promotion", account: "installation-id")
     ])
 }
 
@@ -67,6 +65,39 @@ func linkedStoreIdentifiers() {
     let app = workspace.apps.first
     #expect(app?.appStoreApp?.bundleID == app?.playStoreApp?.bundleID)
     #expect(app?.linkedCount == 2)
+}
+
+@Test("Store rating summaries combine using rating counts")
+func combinedStoreRatings() {
+    let summary = combinedStoreRatingSummary([
+        StoreRatingSummary(averageRating: 4.8, ratingCount: 900),
+        StoreRatingSummary(averageRating: 3.0, ratingCount: 100)
+    ])
+
+    #expect(summary?.averageRating == 4.62)
+    #expect(summary?.ratingCount == 1_000)
+}
+
+@Test("Google Play structured metadata provides the aggregate rating")
+func googlePlayAggregateRating() throws {
+    let html = """
+    <html><head>
+    <script type="application/ld+json">
+    {
+      "@type": "SoftwareApplication",
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.340425491333008",
+        "ratingCount": "36020997"
+      }
+    }
+    </script>
+    </head></html>
+    """
+
+    let summary = googlePlayRatingSummary(fromHTML: try #require(html.data(using: .utf8)))
+    #expect(summary?.averageRating == 4.340425491333008)
+    #expect(summary?.ratingCount == 36_020_997)
 }
 
 @Test("Persisted store data is treated as loaded after relaunch")

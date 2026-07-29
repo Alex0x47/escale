@@ -132,12 +132,8 @@ public struct OnboardingView: View {
         HStack(spacing: 46) {
             VStack(alignment: .leading, spacing: 22) {
                 HStack(spacing: 10) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 15, style: .continuous)
-                            .fill(LinearGradient(colors: [Theme.accent, Color(hex: 0x9B8DFF)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        Image(systemName: "helm").font(.system(size: 28, weight: .bold)).foregroundStyle(.white)
-                    }
-                    .frame(width: 58, height: 58)
+                    EscaleAppIcon(size: 58)
+                        .shadow(color: .black.opacity(0.18), radius: 10, y: 5)
                     Text("Escale").font(.system(size: 29, weight: .bold, design: .rounded))
                 }
                 Text("Your stores,\nfinally in sync.")

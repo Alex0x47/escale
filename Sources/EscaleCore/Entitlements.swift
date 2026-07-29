@@ -52,7 +52,7 @@ public enum EscaleFeature: String, CaseIterable, Codable, Hashable, Identifiable
         case .agencyWorkflows:
             "Organize clients, accounts, permissions, and repeatable workflows for agency use."
         case .createAppStoreVersion:
-            "Use Escale Pro to create a new editable iOS version directly in App Store Connect."
+            "Create a new editable iOS version directly in App Store Connect with Escale Community or Pro."
         case .uploadGooglePlayBundle:
             "Use Escale Pro to upload a signed Android App Bundle and create an editable Google Play draft release."
         }
@@ -70,6 +70,6 @@ public struct CommunityEntitlements: EscaleEntitlementProviding {
     public init() {}
 
     public func hasAccess(to feature: EscaleFeature) -> Bool {
-        false
+        feature == .createAppStoreVersion
     }
 }

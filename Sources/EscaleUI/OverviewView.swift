@@ -22,9 +22,13 @@ public struct OverviewView: View {
     }
 
     private var averageRating: String {
-        guard !store.selectedReviews.isEmpty else { return "—" }
-        let average = Double(store.selectedReviews.map(\.rating).reduce(0, +)) / Double(store.selectedReviews.count)
-        return average.formatted(.number.precision(.fractionLength(1)))
+        guard let summary = store.selectedRatingSummary() else { return "—" }
+        return summary.averageRating.formatted(.number.precision(.fractionLength(1)))
+    }
+
+    private var ratingDetail: String {
+        guard let summary = store.selectedRatingSummary() else { return "No aggregate rating loaded" }
+        return "Based on \(summary.ratingCount.formatted()) store ratings"
     }
 
     private var unansweredReviewCount: Int {
@@ -53,9 +57,9 @@ public struct OverviewView: View {
                         )
                         MetricCard(
                             icon: "star.fill",
-                            label: "Average review rating",
+                            label: "Average store rating",
                             value: averageRating,
-                            detail: "\(store.selectedReviews.count) loaded reviews",
+                            detail: ratingDetail,
                             color: .orange
                         )
                         MetricCard(
@@ -73,10 +77,7 @@ public struct OverviewView: View {
                             color: .green
                         )
                     }
-                    HStack(alignment: .top, spacing: 16) {
-                        releasePanel(app)
-                        liveDataPanel
-                    }
+                    releasePanel(app)
                 }
             }
             .padding(28)
@@ -217,38 +218,6 @@ public struct OverviewView: View {
             StatusPill(state: app.state)
         }
         .padding(18)
-    }
-
-    private var liveDataPanel: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Loaded store data").font(.headline)
-                Text(store.selectedAppHasLiveData ? "Current session" : "Waiting for the first refresh")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            .padding(18)
-            Divider()
-            VStack(alignment: .leading, spacing: 17) {
-                dataRow(icon: "character.book.closed", color: Theme.accent, title: "Localizations", value: store.selectedLocalizations.count)
-                dataRow(icon: "photo.on.rectangle", color: .purple, title: "Screenshots", value: store.selectedScreenshots.count)
-                dataRow(icon: "tag", color: .green, title: "Products and subscriptions", value: store.selectedProducts.count)
-                dataRow(icon: "bubble.left", color: .blue, title: "Customer reviews", value: store.selectedReviews.count)
-            }
-            .padding(18)
-        }
-        .frame(width: 365)
-        .cardStyle()
-    }
-
-    private func dataRow(icon: String, color: Color, title: String, value: Int) -> some View {
-        HStack(spacing: 11) {
-            Image(systemName: icon)
-                .font(.caption.weight(.bold)).foregroundStyle(color)
-                .frame(width: 26, height: 26).background(color.opacity(0.1), in: Circle())
-            Text(title).font(.caption.weight(.semibold))
-            Spacer()
-            Text("\(value)").font(.caption.weight(.bold).monospacedDigit()).foregroundStyle(.secondary)
-        }
     }
 }
 

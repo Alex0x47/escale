@@ -23,7 +23,8 @@ public enum SampleData {
                     usesIDFA: false,
                     downloadable: true,
                     reviewType: "APP_STORE"
-                )
+                ),
+                ratingSummary: StoreRatingSummary(averageRating: 4.7, ratingCount: 18_342)
             ),
             playStoreApp: StoreApp(
                 id: UUID(), platform: .playStore, name: "Northstar Journal",
@@ -47,7 +48,8 @@ public enum SampleData {
                             text: "Une écriture plus fluide, de nouveaux bilans hebdomadaires et une synchronisation accélérée."
                         )
                     ]
-                )
+                ),
+                ratingSummary: StoreRatingSummary(averageRating: 4.4, ratingCount: 9_581)
             )
         )
         let second = UnifiedApp(

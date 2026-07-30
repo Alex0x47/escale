@@ -9,6 +9,9 @@ public enum StorePlatform: String, Codable, CaseIterable, Identifiable, Sendable
     public var shortName: String { self == .appStore ? "iOS" : "Android" }
     public var icon: String { self == .appStore ? "apple.logo" : "play.fill" }
     public var tint: Color { self == .appStore ? Color(hex: 0x2477F5) : Color(hex: 0x14A46D) }
+    public var developerConsoleName: String {
+        self == .appStore ? "App Store Connect" : "Google Play Console"
+    }
 }
 
 public enum ConnectionState: String, Codable, Sendable {
@@ -69,6 +72,21 @@ public struct StoreApp: Identifiable, Codable, Hashable, Sendable {
     public var hasEditableMetadataVersion: Bool {
         guard platform == .appStore else { return true }
         return Self.editableAppStoreStates.contains(remoteState ?? "")
+    }
+
+    public var developerConsoleURL: URL? {
+        switch platform {
+        case .appStore:
+            let appID = storeID.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !appID.isEmpty else { return nil }
+            var components = URLComponents()
+            components.scheme = "https"
+            components.host = "appstoreconnect.apple.com"
+            components.path = "/apps/\(appID)/distribution/ios/version/inflight"
+            return components.url
+        case .playStore:
+            return URL(string: "https://play.google.com/console/")
+        }
     }
 
     private static let editableAppStoreStates: Set<String> = [

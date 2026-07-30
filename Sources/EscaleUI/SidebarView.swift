@@ -464,26 +464,38 @@ private struct StoreVersionRow: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: app.platform.icon).foregroundStyle(app.platform.tint).frame(width: 16)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("\(app.platform.shortName) · \(app.version)").font(.caption.weight(.semibold))
-                    Text(app.state.rawValue).font(.caption2).foregroundStyle(.secondary)
+        HStack(spacing: 0) {
+            Button(action: action) {
+                HStack(spacing: 8) {
+                    Image(systemName: app.platform.icon).foregroundStyle(app.platform.tint).frame(width: 16)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("\(app.platform.shortName) · \(app.version)").font(.caption.weight(.semibold))
+                        Text(app.state.rawValue).font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Circle().fill(app.state.color).frame(width: 7, height: 7)
                 }
-                Spacer()
-                Circle().fill(app.state.color).frame(width: 7, height: 7)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.tertiary)
+                .padding(.leading, 8)
+                .padding(.vertical, 7)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 7)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .help("Show \(app.platform.rawValue) version details")
+
+            if let consoleURL = app.developerConsoleURL {
+                Link(destination: consoleURL) {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 26, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open in \(app.platform.developerConsoleName)")
+                .help("Open in \(app.platform.developerConsoleName)")
+            }
         }
-        .buttonStyle(.plain)
         .background(Color.primary.opacity(0.001), in: RoundedRectangle(cornerRadius: 8))
-        .help("Show \(app.platform.rawValue) version details")
     }
 }
 

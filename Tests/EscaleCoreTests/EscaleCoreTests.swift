@@ -216,6 +216,27 @@ func legacyStoreAppDecoding() throws {
     #expect(app.bundleID == "com.example.app")
 }
 
+@Test("Store apps link to their developer consoles")
+func storeDeveloperConsoleURLs() {
+    let apple = StoreApp(
+        id: UUID(), platform: .appStore, name: "iOS App", bundleID: "com.example.ios",
+        storeID: "1234567890", version: "2.0", state: .draft, versionID: nil, appInfoID: nil
+    )
+    let android = StoreApp(
+        id: UUID(), platform: .playStore, name: "Android App", bundleID: "com.example.android",
+        storeID: "com.example.android", version: "2.0", state: .draft, versionID: nil, appInfoID: nil
+    )
+    var missingAppleID = apple
+    missingAppleID.storeID = "  "
+
+    #expect(
+        apple.developerConsoleURL?.absoluteString
+            == "https://appstoreconnect.apple.com/apps/1234567890/distribution/ios/version/inflight"
+    )
+    #expect(android.developerConsoleURL?.absoluteString == "https://play.google.com/console/")
+    #expect(missingAppleID.developerConsoleURL == nil)
+}
+
 @Test("Store locale aliases merge without collapsing regional variants")
 func localeCanonicalization() {
     #expect(canonicalStoreLocale("ja") == canonicalStoreLocale("ja-JP"))

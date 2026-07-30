@@ -10,6 +10,7 @@ public struct ListingEditorView: View {
     @State private var localizationFilter = ""
     @State private var selectedField: ListingMetadataField = .promotionalText
     @State private var isTranslating = false
+    @State private var isSavingLocalizations = false
     @State private var translatingFields: Set<ListingMetadataField> = []
     @State private var isTranslatingPlayReleaseNotes = false
     @State private var proFeature: EscaleFeature?
@@ -232,12 +233,28 @@ public struct ListingEditorView: View {
                     || store.selectedPrimaryLocalization == nil
             )
             Button {
-                Task { await store.saveLocalization(id: localization.id) }
+                isSavingLocalizations = true
+                Task {
+                    await store.saveEditedLocalizations()
+                    isSavingLocalizations = false
+                }
             } label: {
-                Label("Save to stores", systemImage: "arrow.up.circle.fill")
+                if isSavingLocalizations {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Saving…")
+                    }
+                } else {
+                    Label("Save to stores", systemImage: "arrow.up.circle.fill")
+                }
             }
             .buttonStyle(.borderedProminent)
-            .disabled(localization.dirtyPlatforms.isEmpty || !metadataViolations(localization).isEmpty)
+            .disabled(
+                isSavingLocalizations
+                    || editedLocalizations.isEmpty
+                    || editedLocalizations.contains(where: { !metadataViolations($0).isEmpty })
+            )
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
@@ -411,6 +428,10 @@ public struct ListingEditorView: View {
 
     private var limits: ListingMetadataLimits {
         ListingMetadataLimits(platforms: store.platformFilter.platforms.intersection(store.selectedAvailablePlatforms))
+    }
+
+    private var editedLocalizations: [ListingLocalization] {
+        store.selectedLocalizations.filter { !$0.dirtyPlatforms.isEmpty }
     }
 
     private func metadataViolations(_ localization: ListingLocalization) -> [String] {

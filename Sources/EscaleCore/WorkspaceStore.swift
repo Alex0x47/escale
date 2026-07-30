@@ -1127,8 +1127,26 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     public func saveLocalization(id: UUID) async {
-        guard let appID = selectedAppID,
-              let app = workspace.apps.first(where: { $0.id == appID }),
+        guard let appID = selectedAppID else { return }
+        await saveLocalization(id: id, appID: appID)
+    }
+
+    public func saveEditedLocalizations() async {
+        guard let appID = selectedAppID else { return }
+        let localizationIDs = workspace.localizationsByApp[appID, default: []]
+            .filter { !$0.dirtyPlatforms.isEmpty }
+            .map(\.id)
+        guard !localizationIDs.isEmpty else {
+            showToast("Everything is up to date", detail: "No local changes to publish.", kind: .neutral)
+            return
+        }
+        for id in localizationIDs {
+            await saveLocalization(id: id, appID: appID)
+        }
+    }
+
+    private func saveLocalization(id: UUID, appID: UUID) async {
+        guard let app = workspace.apps.first(where: { $0.id == appID }),
               let index = workspace.localizationsByApp[appID]?.firstIndex(where: { $0.id == id }) else { return }
         var localization = workspace.localizationsByApp[appID]![index]
         let targets = localization.dirtyPlatforms

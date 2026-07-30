@@ -1,3 +1,4 @@
+import AppKit
 import EscaleCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -37,6 +38,22 @@ public struct ScreenshotsView: View {
 
     private var showsStoreSwitcher: Bool {
         store.platformFilter == .both && availablePlatforms.count > 1
+    }
+
+    private var pendingChangeCount: Int {
+        store.pendingScreenshotChangeCount(for: activePlatform)
+    }
+
+    private var isSavingToStore: Bool {
+        store.savingScreenshotPlatforms.contains(activePlatform)
+    }
+
+    private var isAnyStoreSaving: Bool {
+        !store.savingScreenshotPlatforms.isEmpty
+    }
+
+    private var isAnyScreenshotOperationRunning: Bool {
+        isAnyStoreSaving || !store.deletingScreenshotIDs.isEmpty
     }
 
     private var deviceOptions: [String] {
@@ -84,12 +101,13 @@ public struct ScreenshotsView: View {
                     }
                     .pickerStyle(.segmented)
                     .frame(width: 340)
+                    .disabled(isAnyScreenshotOperationRunning)
                     .accessibilityLabel("Screenshot store")
                 }
 
                 HStack(spacing: 7) {
-                    Image(systemName: "line.3.horizontal")
-                    Text("Drag a screenshot, then release it on an insertion line. The new order saves to \(activePlatform.rawValue) automatically.")
+                    Image(systemName: "square.and.pencil")
+                    Text("Add and reorder freely, then choose Save to store. Deletions are applied immediately.")
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -199,24 +217,50 @@ public struct ScreenshotsView: View {
             } label: {
                 Label("Add screenshot", systemImage: "plus")
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.bordered)
             .disabled(
                 !store.selectedAvailablePlatforms.contains(activePlatform)
                     || device == "All devices"
-                    || !store.reorderingScreenshotIDs.isEmpty
+                    || isAnyScreenshotOperationRunning
             )
             .help(
                 device == "All devices"
                     ? "Choose a device gallery before uploading"
                     : "Upload to \(activePlatform.rawValue)"
             )
+            Button {
+                Task {
+                    await store.saveScreenshotChanges(for: activePlatform)
+                }
+            } label: {
+                if isSavingToStore {
+                    HStack(spacing: 7) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Saving…")
+                    }
+                } else {
+                    Label("Save to store", systemImage: "arrow.up.circle.fill")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(pendingChangeCount == 0 || isAnyScreenshotOperationRunning)
+            .help(
+                pendingChangeCount == 0
+                    ? "There are no unsaved \(activePlatform.shortName) screenshot changes"
+                    : "Apply all pending screenshot changes to \(activePlatform.rawValue)"
+            )
         }
     }
 
     private func gallerySection(_ gallery: ScreenshotGallery) -> some View {
-        let isSaving = gallery.screenshots.contains {
-            store.reorderingScreenshotIDs.contains($0.id)
+        let hasPendingChanges = gallery.screenshots.first.map {
+            store.screenshotGalleryHasPendingChanges($0)
+        } == true
+        let isDeleting = gallery.screenshots.contains {
+            store.deletingScreenshotIDs.contains($0.id)
         }
+        let controlsDisabled = isAnyScreenshotOperationRunning
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: deviceIcon(for: gallery.title))
@@ -226,12 +270,25 @@ public struct ScreenshotsView: View {
                 Text("\(gallery.screenshots.count) of \(activePlatform == .appStore ? 10 : 8)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if isSaving {
+                if isDeleting {
                     ProgressView()
                         .controlSize(.small)
-                    Text("Saving order…")
+                    Text("Deleting screenshot…")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                } else if isSavingToStore, hasPendingChanges {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Saving to store…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if hasPendingChanges {
+                    Text("Unsaved changes")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.orange.opacity(0.12), in: Capsule())
                 }
             }
 
@@ -239,21 +296,23 @@ public struct ScreenshotsView: View {
                 LazyHStack(alignment: .top, spacing: 8) {
                     ScreenshotInsertionTarget(
                         before: gallery.screenshots.first?.id,
-                        isEnabled: !isSaving,
+                        isEnabled: !controlsDisabled,
                         onMove: moveScreenshot
                     )
                     ForEach(Array(gallery.screenshots.enumerated()), id: \.element.id) { index, screenshot in
                         ScreenshotCard(
                             screenshot: screenshot,
                             number: index + 1,
-                            isReordering: isSaving,
+                            isBusy: controlsDisabled,
+                            isPendingUpload: screenshot.localDraftURL != nil
+                                && screenshot.remoteID == nil,
                             onDelete: { store.deleteScreenshot(screenshot.id) }
                         )
                         ScreenshotInsertionTarget(
                             before: gallery.screenshots.indices.contains(index + 1)
                                 ? gallery.screenshots[index + 1].id
                                 : nil,
-                            isEnabled: !isSaving,
+                            isEnabled: !controlsDisabled,
                             onMove: moveScreenshot
                         )
                     }
@@ -271,6 +330,7 @@ public struct ScreenshotsView: View {
     }
 
     private func upload(_ urls: [URL]) {
+        guard !isAnyScreenshotOperationRunning else { return }
         guard device != "All devices" else {
             store.showToast(
                 "Choose a device gallery",
@@ -394,7 +454,8 @@ private struct ScreenshotInsertionTarget: View {
 private struct ScreenshotCard: View {
     let screenshot: StoreScreenshot
     let number: Int
-    let isReordering: Bool
+    let isBusy: Bool
+    let isPendingUpload: Bool
     let onDelete: () -> Void
     @State private var hovering = false
     @State private var confirmsDeletion = false
@@ -423,6 +484,11 @@ private struct ScreenshotCard: View {
                     .lineLimit(1)
                 Spacer()
                 PlatformBadge(platform: screenshot.platform, showsName: false)
+                if isPendingUpload {
+                    Text("NEW")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.orange)
+                }
                 Button {
                     confirmsDeletion = true
                 } label: {
@@ -439,7 +505,7 @@ private struct ScreenshotCard: View {
             .frame(width: previewWidth)
         }
         .padding(4)
-        .opacity(isReordering ? 0.58 : 1)
+        .opacity(isBusy ? 0.58 : 1)
         .contentShape(Rectangle())
         .draggable(screenshot.id.uuidString) {
             Label("Move screenshot \(number)", systemImage: "photo")
@@ -448,7 +514,7 @@ private struct ScreenshotCard: View {
                 .padding(.vertical, 10)
                 .background(.regularMaterial, in: Capsule())
         }
-        .disabled(isReordering)
+        .disabled(isBusy)
         .help("Drag to reorder")
         .accessibilityLabel("Screenshot \(number)")
         .accessibilityHint("Drag to change its position in the gallery")
@@ -457,16 +523,23 @@ private struct ScreenshotCard: View {
             Button("Delete", role: .destructive, action: onDelete)
         } message: {
             if screenshot.remoteID == nil {
-                Text("This removes the screenshot from Escale. This action cannot be undone.")
+                Text("This removes the unsaved screenshot from your draft. The store will not be changed.")
             } else {
-                Text("This permanently removes the screenshot from \(screenshot.platform.rawValue). This action cannot be undone.")
+                Text("This immediately and permanently deletes the screenshot from \(screenshot.platform.rawValue). This action cannot be undone.")
             }
         }
     }
 
     @ViewBuilder
     private var screenshotImage: some View {
-        if let urlString = screenshot.remoteURL, let url = URL(string: urlString) {
+        if let localURLString = screenshot.localDraftURL,
+           let localURL = URL(string: localURLString),
+           let image = NSImage(contentsOf: localURL) {
+            Image(nsImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: previewWidth)
+        } else if let urlString = screenshot.remoteURL, let url = URL(string: urlString) {
             AsyncImage(url: url) { phase in
                 if let image = phase.image {
                     image

@@ -381,6 +381,16 @@ public struct StoreScreenshot: Identifiable, Codable, Hashable, Sendable {
     public var remoteID: String?
     public var remoteURL: String?
     public var screenshotSetID: String?
+    public var localDraftURL: String? = nil
+}
+
+public func screenshotGalleryKey(_ screenshot: StoreScreenshot) -> String {
+    let gallery = screenshot.screenshotSetID ?? screenshot.device.lowercased()
+    return [
+        screenshot.platform.rawValue,
+        canonicalStoreLocale(screenshot.locale),
+        gallery
+    ].joined(separator: "|")
 }
 
 public func screenshotsShareGallery(_ lhs: StoreScreenshot, _ rhs: StoreScreenshot) -> Bool {
@@ -431,6 +441,41 @@ public func screenshotsByMoving(
     return result
 }
 
+public struct ScreenshotDraftState: Codable, Hashable, Sendable {
+    public var dirtyGalleryKeys: Set<String>
+    public var deletedScreenshots: [StoreScreenshot]
+
+    public init(
+        dirtyGalleryKeys: Set<String> = [],
+        deletedScreenshots: [StoreScreenshot] = []
+    ) {
+        self.dirtyGalleryKeys = dirtyGalleryKeys
+        self.deletedScreenshots = deletedScreenshots
+    }
+
+    public var isEmpty: Bool {
+        dirtyGalleryKeys.isEmpty && deletedScreenshots.isEmpty
+    }
+}
+
+public func googlePlayOriginalImageURL(from previewURL: URL) -> URL? {
+    guard let host = previewURL.host?.lowercased(),
+          host == "googleusercontent.com"
+            || host.hasSuffix(".googleusercontent.com")
+            || host == "ggpht.com"
+            || host.hasSuffix(".ggpht.com"),
+          var components = URLComponents(url: previewURL, resolvingAgainstBaseURL: false) else {
+        return nil
+    }
+    let path = components.percentEncodedPath
+    if let transform = path.range(of: #"=[^/]+$"#, options: .regularExpression) {
+        components.percentEncodedPath.replaceSubrange(transform, with: "=s0")
+    } else {
+        components.percentEncodedPath += "=s0"
+    }
+    return components.url
+}
+
 public struct ScreenshotImageProperties: Equatable, Sendable {
     public let width: Int
     public let height: Int
@@ -475,8 +520,8 @@ public func screenshotUploadValidationIssue(
         guard longestSide <= 3_840 else {
             return "Google Play screenshots cannot exceed 3,840 px on their longest side."
         }
-        guard longestSide <= shortestSide * 2 else {
-            return "Google Play requires the longest side to be no more than twice the shortest side."
+        guard longestSide * 10 <= shortestSide * 23 else {
+            return "Google Play requires the longest side to be no more than 2.3 times the shortest side."
         }
     }
     return nil
@@ -673,6 +718,7 @@ public struct Workspace: Codable, Sendable {
     public var reviewsByApp: [UUID: [CustomerReview]]
     public var googlePlayReleaseNotesByApp: [UUID: String]? = nil
     public var releaseNoteTemplates: [ReleaseNoteTemplate]? = nil
+    public var screenshotDraftsByApp: [UUID: ScreenshotDraftState]? = nil
 }
 
 extension Workspace {

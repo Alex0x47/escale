@@ -34,7 +34,8 @@ public final class WorkspaceStore: ObservableObject {
     @Published public private(set) var isOpenAIKeyConfigured = false
     @Published public private(set) var calculatingProductIDs: Set<UUID> = []
     @Published public private(set) var pricingApplyProgressByProductID: [UUID: PricingApplyProgress] = [:]
-    @Published public private(set) var reorderingScreenshotIDs: Set<UUID> = []
+    @Published public private(set) var savingScreenshotPlatforms: Set<StorePlatform> = []
+    @Published public private(set) var deletingScreenshotIDs: Set<UUID> = []
     @Published public private(set) var isAnalyticsEnabled: Bool
 
     public let entitlements: any EscaleEntitlementProviding
@@ -169,6 +170,24 @@ public final class WorkspaceStore: ObservableObject {
     public var selectedScreenshots: [StoreScreenshot] { selectedAppID.flatMap { workspace.screenshotsByApp[$0] } ?? [] }
     public var selectedProducts: [StoreProduct] { selectedAppID.flatMap { workspace.productsByApp[$0] } ?? [] }
     public var selectedReviews: [CustomerReview] { selectedAppID.flatMap { workspace.reviewsByApp[$0] } ?? [] }
+
+    public func pendingScreenshotChangeCount(for platform: StorePlatform) -> Int {
+        guard let appID = selectedAppID,
+              let draft = workspace.screenshotDraftsByApp?[appID] else {
+            return 0
+        }
+        let dirtyCount = draft.dirtyGalleryKeys.filter {
+            $0.hasPrefix(platform.rawValue + "|")
+        }.count
+        return dirtyCount
+    }
+
+    public func screenshotGalleryHasPendingChanges(_ screenshot: StoreScreenshot) -> Bool {
+        guard let appID = selectedAppID else { return false }
+        return workspace.screenshotDraftsByApp?[appID]?
+            .dirtyGalleryKeys
+            .contains(screenshotGalleryKey(screenshot)) == true
+    }
     public var releaseNoteTemplates: [ReleaseNoteTemplate] {
         (workspace.releaseNoteTemplates ?? []).sorted {
             if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
@@ -1179,7 +1198,11 @@ public final class WorkspaceStore: ObservableObject {
         device: String,
         platform: StorePlatform? = nil
     ) async {
-        guard let appID = selectedAppID, let app = selectedApp else { return }
+        guard let appID = selectedAppID,
+              savingScreenshotPlatforms.isEmpty,
+              deletingScreenshotIDs.isEmpty else {
+            return
+        }
         let access = fileURL.startAccessingSecurityScopedResource()
         defer { if access { fileURL.stopAccessingSecurityScopedResource() } }
         do {
@@ -1199,16 +1222,6 @@ public final class WorkspaceStore: ObservableObject {
             }
             guard !targets.isEmpty else {
                 showToast("Screenshot not uploaded", detail: "The selected store is not linked to this app.", kind: .error)
-                return
-            }
-            if !isDemoMode,
-               targets.contains(.appStore),
-               app.appStoreApp?.hasEditableMetadataVersion != true {
-                showToast(
-                    "Screenshot not uploaded",
-                    detail: "Create or select an editable App Store version before changing its screenshots.",
-                    kind: .error
-                )
                 return
             }
             for target in targets {
@@ -1267,50 +1280,58 @@ public final class WorkspaceStore: ObservableObject {
                 )
                 return
             }
-            showToast("Uploading screenshot…", detail: targets.map(\.rawValue).joined(separator: " and "), kind: .progress)
-            if isDemoMode {
-                workspace.screenshotsByApp[appID, default: []].append(StoreScreenshot(id: UUID(), platform: targets.first ?? .appStore, locale: locale, device: device, title: fileURL.deletingPathExtension().lastPathComponent, caption: "Local preview", gradientStartHex: 0x5367D8, gradientEndHex: 0x9F74E8, remoteID: nil, remoteURL: fileURL.absoluteString, screenshotSetID: nil))
-            } else {
-                if targets.contains(.appStore),
-                   let displayType = appleDisplayType,
-                   let localization = workspace.localizationsByApp[appID]?.first(where: {
-                       canonicalStoreLocale($0.locale) == canonicalStoreLocale(locale)
-                   }) {
-                    guard let credentials = try CredentialStore.apple() else { throw APIError.missingCredentials(.appStore) }
-                    let existingSet = workspace.screenshotsByApp[appID]?.first(where: {
-                        $0.platform == .appStore
-                            && canonicalStoreLocale($0.locale) == canonicalStoreLocale(locale)
-                            && screenshotDevice($0.device, matchesDisplayType: displayType)
+            for target in targets {
+                let screenshotID = UUID()
+                let draftURL = try cacheScreenshotDraft(
+                    data: data,
+                    appID: appID,
+                    screenshotID: screenshotID,
+                    fileExtension: image.fileExtension
+                )
+                let targetLocale: String
+                let setID: String?
+                if target == .appStore {
+                    targetLocale = locale
+                    let visibleScreenshots = workspace.screenshotsByApp[appID] ?? []
+                    let deletedScreenshots = workspace.screenshotDraftsByApp?[appID]?
+                        .deletedScreenshots ?? []
+                    setID = (visibleScreenshots + deletedScreenshots).first(where: { candidate in
+                        candidate.platform == .appStore
+                            && canonicalStoreLocale(candidate.locale) == canonicalStoreLocale(locale)
+                            && appleDisplayType.map { displayType in
+                                screenshotDevice(candidate.device, matchesDisplayType: displayType)
+                            } == true
                     })?.screenshotSetID
-                    try await AppStoreConnectClient(credentials: credentials).uploadScreenshot(
-                        data: data,
-                        fileName: image.fileName(for: fileURL),
-                        localization: localization,
-                        existingSetID: existingSet,
-                        displayType: displayType
-                    )
-                }
-                if targets.contains(.playStore),
-                   let imageType = googleImageType,
-                   let playApp = app.playStoreApp {
-                    guard let credentials = try CredentialStore.google() else { throw APIError.missingCredentials(.playStore) }
-                    let playLanguage = workspace.localizationsByApp[appID]?
+                } else {
+                    targetLocale = workspace.localizationsByApp[appID]?
                         .first(where: { canonicalStoreLocale($0.locale) == canonicalStoreLocale(locale) })?
                         .googleLanguage
                         ?? googleLocale(forAppleLocale: locale)
-                    try await GooglePlayClient(credentials: credentials).uploadScreenshot(
-                        data: data,
-                        fileName: image.fileName(for: fileURL),
-                        mimeType: image.mimeType,
-                        packageName: playApp.bundleID,
-                        language: playLanguage,
-                        imageType: imageType
-                    )
+                    setID = googleImageType
                 }
-                await sync(appID: appID, platforms: targets)
+                let screenshot = StoreScreenshot(
+                    id: screenshotID,
+                    platform: target,
+                    locale: targetLocale,
+                    device: device,
+                    title: fileURL.deletingPathExtension().lastPathComponent,
+                    caption: "Unsaved screenshot",
+                    gradientStartHex: target == .appStore ? 0x5367D8 : 0x3D7C68,
+                    gradientEndHex: target == .appStore ? 0x9F74E8 : 0x62B494,
+                    remoteID: nil,
+                    remoteURL: draftURL.absoluteString,
+                    screenshotSetID: setID,
+                    localDraftURL: draftURL.absoluteString
+                )
+                workspace.screenshotsByApp[appID, default: []].append(screenshot)
+                markScreenshotGalleryDirty(screenshot, appID: appID)
             }
             persist()
-            showToast("Screenshot uploaded", detail: "The selected stores accepted the asset.", kind: .success)
+            showToast(
+                "Screenshot added",
+                detail: "Review your changes, then choose Save to store.",
+                kind: .success
+            )
             track(.screenshotOperationCompleted(
                 operation: .upload,
                 scope: EscaleAnalyticsEvent.scope(for: targets),
@@ -1332,8 +1353,8 @@ public final class WorkspaceStore: ObservableObject {
 
     public func reorderScreenshot(_ screenshotID: UUID, before destinationID: UUID?) async {
         guard let appID = selectedAppID,
-              reorderingScreenshotIDs.isEmpty,
-              let app = workspace.apps.first(where: { $0.id == appID }),
+              savingScreenshotPlatforms.isEmpty,
+              deletingScreenshotIDs.isEmpty,
               let original = workspace.screenshotsByApp[appID],
               let source = original.first(where: { $0.id == screenshotID }) else {
             return
@@ -1355,105 +1376,276 @@ public final class WorkspaceStore: ObservableObject {
         ) else {
             return
         }
-
-        let gallery = reordered.filter { screenshotsShareGallery($0, source) }
-        if !isDemoMode,
-           source.platform == .appStore,
-           gallery.contains(where: { $0.remoteID != nil }),
-           app.appStoreApp?.hasEditableMetadataVersion != true {
-            showToast(
-                "Screenshot order not changed",
-                detail: "Create or select an editable App Store version before changing its screenshots.",
-                kind: .error
-            )
-            return
-        }
-        let galleryIDs = Set(gallery.map(\.id))
-        reorderingScreenshotIDs = galleryIDs
         workspace.screenshotsByApp[appID] = reordered
+        markScreenshotGalleryDirty(source, appID: appID)
         persist()
-        defer { reorderingScreenshotIDs.subtract(galleryIDs) }
+        showToast(
+            "Order changed",
+            detail: "Review your changes, then choose Save to store.",
+            kind: .success
+        )
+    }
 
-        if isDemoMode || gallery.allSatisfy({ $0.remoteID == nil }) {
-            showToast("Screenshot order saved", detail: "The demo gallery now uses the new order.", kind: .success)
+    public func saveScreenshotChanges(for platform: StorePlatform) async {
+        guard let appID = selectedAppID,
+              savingScreenshotPlatforms.isEmpty,
+              deletingScreenshotIDs.isEmpty,
+              let app = workspace.apps.first(where: { $0.id == appID }),
+              let draft = workspace.screenshotDraftsByApp?[appID] else {
             return
         }
+        let galleryKeys = draft.dirtyGalleryKeys
+            .filter { $0.hasPrefix(platform.rawValue + "|") }
+            .sorted()
+        guard !galleryKeys.isEmpty else { return }
 
+        savingScreenshotPlatforms.insert(platform)
+        defer { savingScreenshotPlatforms.remove(platform) }
         showToast(
-            "Saving screenshot order…",
-            detail: "Updating the \(source.platform.rawValue) gallery automatically.",
+            "Saving screenshots to \(platform.rawValue)…",
+            detail: "Applying \(galleryKeys.count) changed \(galleryKeys.count == 1 ? "gallery" : "galleries").",
             kind: .progress
         )
+
         do {
-            switch source.platform {
-            case .appStore:
-                guard let credentials = try CredentialStore.apple() else {
-                    throw APIError.missingCredentials(.appStore)
-                }
-                guard let setID = source.screenshotSetID,
-                      gallery.allSatisfy({ $0.screenshotSetID == setID }),
-                      gallery.compactMap(\.remoteID).count == gallery.count else {
-                    throw APIError.unsupported("Refresh this App Store screenshot gallery before reordering it.")
-                }
-                try await AppStoreConnectClient(credentials: credentials).reorderScreenshots(
-                    setID: setID,
-                    remoteIDs: gallery.compactMap(\.remoteID)
-                )
-            case .playStore:
-                guard let credentials = try CredentialStore.google(),
-                      let packageName = app.playStoreApp?.bundleID else {
-                    throw APIError.missingCredentials(.playStore)
-                }
-                guard let imageType = source.screenshotSetID else {
-                    throw APIError.unsupported("Refresh this Google Play screenshot gallery before reordering it.")
-                }
-                var uploads: [GooglePlayScreenshotUpload] = []
-                for screenshot in gallery {
-                    uploads.append(try await googlePlayUpload(for: screenshot))
-                }
-                let references = try await GooglePlayClient(credentials: credentials).replaceScreenshots(
-                    uploads,
-                    packageName: packageName,
-                    language: source.locale,
-                    imageType: imageType
-                )
-                guard references.count == gallery.count else { throw APIError.invalidResponse }
-                for (screenshot, reference) in zip(gallery, references) {
-                    guard let index = workspace.screenshotsByApp[appID]?.firstIndex(where: { $0.id == screenshot.id }) else {
-                        continue
+            if isDemoMode {
+                if let indices = workspace.screenshotsByApp[appID]?.indices {
+                    for index in indices {
+                        let screenshot = workspace.screenshotsByApp[appID]![index]
+                        guard galleryKeys.contains(screenshotGalleryKey(screenshot)),
+                              screenshot.remoteID == nil else {
+                            continue
+                        }
+                        workspace.screenshotsByApp[appID]?[index].remoteID =
+                            "demo-\(screenshot.id.uuidString)"
                     }
-                    workspace.screenshotsByApp[appID]?[index].remoteID = reference.id
-                    workspace.screenshotsByApp[appID]?[index].remoteURL = reference.url
                 }
+                for key in galleryKeys {
+                    completeScreenshotGalleryDraft(
+                        key,
+                        appID: appID,
+                        removeLocalFiles: false
+                    )
+                }
+            } else {
+                switch platform {
+                case .appStore:
+                    guard app.appStoreApp?.hasEditableMetadataVersion == true else {
+                        throw APIError.unsupported(
+                            "Create or select an editable App Store version before saving its screenshots."
+                        )
+                    }
+                    guard let credentials = try CredentialStore.apple() else {
+                        throw APIError.missingCredentials(.appStore)
+                    }
+                    let client = AppStoreConnectClient(credentials: credentials)
+                    for key in galleryKeys {
+                        try await saveAppStoreScreenshotGallery(
+                            key,
+                            appID: appID,
+                            client: client
+                        )
+                    }
+                case .playStore:
+                    guard let credentials = try CredentialStore.google(),
+                          let packageName = app.playStoreApp?.bundleID else {
+                        throw APIError.missingCredentials(.playStore)
+                    }
+                    let client = GooglePlayClient(credentials: credentials)
+                    for key in galleryKeys {
+                        try await saveGooglePlayScreenshotGallery(
+                            key,
+                            appID: appID,
+                            packageName: packageName,
+                            client: client
+                        )
+                    }
+                }
+                await sync(appID: appID, platforms: [platform])
             }
             persist()
-            showToast("Screenshot order saved", detail: "The remote gallery now uses the new order.", kind: .success)
-            track(.screenshotOperationCompleted(
-                operation: .reorder,
-                scope: source.platform == .appStore ? .apple : .google,
-                result: .success,
-                failure: nil
-            ))
+            showToast(
+                "Screenshots saved",
+                detail: "\(platform.rawValue) now uses the updated galleries.",
+                kind: .success
+            )
         } catch {
-            workspace.screenshotsByApp[appID] = original
             persist()
             showError(error)
-            track(.screenshotOperationCompleted(
-                operation: .reorder,
-                scope: source.platform == .appStore ? .apple : .google,
-                result: .failure,
-                failure: EscaleAnalyticsEvent.failureCategory(for: error)
-            ))
         }
     }
 
+    private func saveAppStoreScreenshotGallery(
+        _ galleryKey: String,
+        appID: UUID,
+        client: AppStoreConnectClient
+    ) async throws {
+        var gallery = workspace.screenshotsByApp[appID, default: []].filter {
+            screenshotGalleryKey($0) == galleryKey
+        }
+        let galleryScreenshotIDs = Set(gallery.map(\.id))
+        let deleted = workspace.screenshotDraftsByApp?[appID]?
+            .deletedScreenshots
+            .filter { screenshotGalleryKey($0) == galleryKey } ?? []
+        guard let representative = gallery.first ?? deleted.first,
+              let localization = workspace.localizationsByApp[appID]?.first(where: {
+                  canonicalStoreLocale($0.locale) == canonicalStoreLocale(representative.locale)
+              }) else {
+            throw APIError.unsupported("Refresh this App Store screenshot gallery before saving it.")
+        }
+        var setID = gallery.compactMap(\.screenshotSetID).first
+            ?? deleted.compactMap(\.screenshotSetID).first
+        var completionGalleryKeys = Set([galleryKey])
+
+        for screenshot in deleted {
+            if let remoteID = screenshot.remoteID {
+                try await client.deleteScreenshot(remoteID: remoteID)
+            }
+            mutateScreenshotDraft(appID: appID) {
+                $0.deletedScreenshots.removeAll { $0.id == screenshot.id }
+            }
+        }
+
+        for screenshot in gallery where screenshot.remoteID == nil {
+            guard let localURLString = screenshot.localDraftURL,
+                  let localURL = URL(string: localURLString) else {
+                throw APIError.unsupported("A local screenshot draft is missing. Add the screenshot again.")
+            }
+            let data = try Data(contentsOf: localURL)
+            guard let image = screenshotImageProperties(from: data),
+                  let displayType = appStoreScreenshotDisplayType(
+                      width: image.properties.width,
+                      height: image.properties.height,
+                      device: screenshot.device
+                  ) else {
+                throw APIError.unsupported("A local App Store screenshot no longer has an accepted size.")
+            }
+            let reference = try await client.uploadScreenshot(
+                data: data,
+                fileName: localURL.lastPathComponent,
+                localization: localization,
+                existingSetID: setID,
+                displayType: displayType
+            )
+            let createdSet = setID == nil
+            setID = reference.setID
+            if createdSet {
+                for screenshotID in galleryScreenshotIDs {
+                    guard let index = workspace.screenshotsByApp[appID]?.firstIndex(where: {
+                        $0.id == screenshotID
+                    }) else {
+                        continue
+                    }
+                    workspace.screenshotsByApp[appID]?[index].screenshotSetID = reference.setID
+                }
+                if let migratedKey = workspace.screenshotsByApp[appID]?
+                    .first(where: { galleryScreenshotIDs.contains($0.id) })
+                    .map(screenshotGalleryKey) {
+                    completionGalleryKeys.insert(migratedKey)
+                    mutateScreenshotDraft(appID: appID) {
+                        $0.dirtyGalleryKeys.remove(galleryKey)
+                        $0.dirtyGalleryKeys.insert(migratedKey)
+                    }
+                }
+            }
+            guard let index = workspace.screenshotsByApp[appID]?.firstIndex(where: {
+                $0.id == screenshot.id
+            }) else {
+                throw APIError.invalidResponse
+            }
+            workspace.screenshotsByApp[appID]?[index].remoteID = reference.id
+            workspace.screenshotsByApp[appID]?[index].screenshotSetID = reference.setID
+        }
+
+        gallery = workspace.screenshotsByApp[appID, default: []].filter { screenshot in
+            guard screenshot.platform == .appStore else { return false }
+            if let setID {
+                return screenshot.screenshotSetID == setID
+            }
+            return screenshotGalleryKey(screenshot) == galleryKey
+        }
+        if gallery.count > 1,
+           let setID,
+           gallery.compactMap(\.remoteID).count == gallery.count {
+            try await client.reorderScreenshots(
+                setID: setID,
+                remoteIDs: gallery.compactMap(\.remoteID)
+            )
+        }
+        for key in completionGalleryKeys {
+            completeScreenshotGalleryDraft(
+                key,
+                appID: appID,
+                screenshotIDs: galleryScreenshotIDs
+            )
+        }
+    }
+
+    private func saveGooglePlayScreenshotGallery(
+        _ galleryKey: String,
+        appID: UUID,
+        packageName: String,
+        client: GooglePlayClient
+    ) async throws {
+        let gallery = workspace.screenshotsByApp[appID, default: []].filter {
+            screenshotGalleryKey($0) == galleryKey
+        }
+        let deleted = workspace.screenshotDraftsByApp?[appID]?
+            .deletedScreenshots
+            .filter { screenshotGalleryKey($0) == galleryKey } ?? []
+        guard let representative = gallery.first ?? deleted.first,
+              let imageType = representative.screenshotSetID else {
+            throw APIError.unsupported("Refresh this Google Play screenshot gallery before saving it.")
+        }
+        var uploads: [GooglePlayScreenshotUpload] = []
+        for screenshot in gallery {
+            uploads.append(try await googlePlayUpload(for: screenshot))
+        }
+        let references = try await client.replaceScreenshots(
+            uploads,
+            packageName: packageName,
+            language: representative.locale,
+            imageType: imageType
+        )
+        guard references.count == gallery.count else {
+            throw APIError.invalidResponse
+        }
+        for (screenshot, reference) in zip(gallery, references) {
+            guard let index = workspace.screenshotsByApp[appID]?.firstIndex(where: {
+                $0.id == screenshot.id
+            }) else {
+                continue
+            }
+            workspace.screenshotsByApp[appID]?[index].remoteID = reference.id
+            workspace.screenshotsByApp[appID]?[index].remoteURL = reference.url
+        }
+        completeScreenshotGalleryDraft(galleryKey, appID: appID)
+    }
+
     private func googlePlayUpload(for screenshot: StoreScreenshot) async throws -> GooglePlayScreenshotUpload {
+        if let localDraftURL = screenshot.localDraftURL,
+           let url = URL(string: localDraftURL) {
+            let data = try Data(contentsOf: url)
+            guard let image = screenshotImageProperties(from: data) else {
+                throw APIError.unsupported("The local screenshot draft can no longer be read.")
+            }
+            return GooglePlayScreenshotUpload(
+                data: data,
+                fileName: url.lastPathComponent,
+                mimeType: image.mimeType
+            )
+        }
         guard let urlString = screenshot.remoteURL,
-              let url = URL(string: urlString),
-              url.scheme?.hasPrefix("http") == true else {
+              let previewURL = URL(string: urlString),
+              previewURL.scheme?.hasPrefix("http") == true else {
             throw APIError.unsupported("Refresh this Google Play screenshot gallery before reordering it.")
         }
-        let response = try await HTTPTransport.send(url: url, timeout: 120)
+        guard let originalURL = googlePlayOriginalImageURL(from: previewURL) else {
+            throw APIError.unsupported(
+                "Google Play only returned a preview for this screenshot, so Escale cannot safely recover the original image for reordering."
+            )
+        }
+        let response = try await HTTPTransport.send(url: originalURL, timeout: 120)
         let responseType = response.response.mimeType?.lowercased()
         let mimeType: String
         let fileExtension: String
@@ -1466,11 +1658,115 @@ public final class WorkspaceStore: ObservableObject {
         } else {
             throw APIError.unsupported("Google Play returned a screenshot format that cannot be safely re-uploaded.")
         }
+        guard let image = screenshotImageProperties(from: response.data) else {
+            throw APIError.unsupported("Google Play returned an unreadable original screenshot.")
+        }
+        if let issue = screenshotUploadValidationIssue(
+            properties: image.properties,
+            platform: .playStore,
+            device: screenshot.device
+        ) {
+            throw APIError.unsupported(
+                "Google Play’s recovered screenshot cannot be safely re-uploaded: \(issue)"
+            )
+        }
         return GooglePlayScreenshotUpload(
             data: response.data,
             fileName: "\(screenshot.remoteID ?? screenshot.id.uuidString).\(fileExtension)",
             mimeType: mimeType
         )
+    }
+
+    private func mutateScreenshotDraft(
+        appID: UUID,
+        _ mutation: (inout ScreenshotDraftState) -> Void
+    ) {
+        var drafts = workspace.screenshotDraftsByApp ?? [:]
+        var draft = drafts[appID] ?? ScreenshotDraftState()
+        mutation(&draft)
+        if draft.isEmpty {
+            drafts.removeValue(forKey: appID)
+        } else {
+            drafts[appID] = draft
+        }
+        workspace.screenshotDraftsByApp = drafts.isEmpty ? nil : drafts
+    }
+
+    private func markScreenshotGalleryDirty(_ screenshot: StoreScreenshot, appID: UUID) {
+        mutateScreenshotDraft(appID: appID) {
+            $0.dirtyGalleryKeys.insert(screenshotGalleryKey(screenshot))
+        }
+    }
+
+    private func completeScreenshotGalleryDraft(
+        _ galleryKey: String,
+        appID: UUID,
+        screenshotIDs: Set<UUID>? = nil,
+        removeLocalFiles: Bool = true
+    ) {
+        let targetIDs = screenshotIDs ?? Set(
+            workspace.screenshotsByApp[appID, default: []]
+                .filter { screenshotGalleryKey($0) == galleryKey }
+                .map(\.id)
+        )
+        for screenshotID in targetIDs {
+            guard let index = workspace.screenshotsByApp[appID]?.firstIndex(where: {
+                $0.id == screenshotID
+            }) else {
+                continue
+            }
+            if removeLocalFiles {
+                removeScreenshotDraftFile(for: workspace.screenshotsByApp[appID]![index])
+                workspace.screenshotsByApp[appID]?[index].localDraftURL = nil
+            }
+        }
+        mutateScreenshotDraft(appID: appID) {
+            $0.dirtyGalleryKeys.remove(galleryKey)
+            $0.deletedScreenshots.removeAll {
+                screenshotGalleryKey($0) == galleryKey
+            }
+        }
+    }
+
+    private func cacheScreenshotDraft(
+        data: Data,
+        appID: UUID,
+        screenshotID: UUID,
+        fileExtension: String
+    ) throws -> URL {
+        let directory = screenshotDraftDirectory
+            .appending(path: appID.uuidString, directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        let url = directory.appending(
+            path: screenshotID.uuidString + "." + fileExtension,
+            directoryHint: .notDirectory
+        )
+        try data.write(to: url, options: .atomic)
+        return url
+    }
+
+    private var screenshotDraftDirectory: URL {
+        let base = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first ?? FileManager.default.temporaryDirectory
+        return base
+            .appending(path: "Escale", directoryHint: .isDirectory)
+            .appending(path: "ScreenshotDrafts", directoryHint: .isDirectory)
+    }
+
+    private func removeScreenshotDraftFile(for screenshot: StoreScreenshot) {
+        guard let value = screenshot.localDraftURL,
+              let url = URL(string: value) else {
+            return
+        }
+        let rootPath = screenshotDraftDirectory.standardizedFileURL.path + "/"
+        let target = url.standardizedFileURL
+        guard target.path.hasPrefix(rootPath) else { return }
+        try? FileManager.default.removeItem(at: target)
     }
 
     private func screenshotImageProperties(from data: Data) -> ScreenshotUploadImage? {
@@ -1533,6 +1829,14 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     private func screenshotDevice(_ remoteDevice: String, matchesDisplayType displayType: String) -> Bool {
+        if remoteDevice.caseInsensitiveCompare("Phone") == .orderedSame,
+           displayType.contains("IPHONE") {
+            return true
+        }
+        if remoteDevice.caseInsensitiveCompare("Tablet") == .orderedSame,
+           displayType.contains("IPAD") {
+            return true
+        }
         if displayType == "APP_DESKTOP" {
             return remoteDevice.localizedCaseInsensitiveContains("Desktop")
         }
@@ -1549,21 +1853,19 @@ public final class WorkspaceStore: ObservableObject {
 
     public func deleteScreenshot(_ id: UUID) {
         guard let appID = selectedAppID,
+              savingScreenshotPlatforms.isEmpty,
+              deletingScreenshotIDs.isEmpty,
+              let app = workspace.apps.first(where: { $0.id == appID }),
               let screenshot = workspace.screenshotsByApp[appID]?.first(where: { $0.id == id }) else { return }
-        if !isDemoMode,
-           screenshot.remoteID != nil,
-           screenshot.platform == .appStore,
-           selectedApp?.appStoreApp?.hasEditableMetadataVersion != true {
-            showToast(
-                "Screenshot not deleted",
-                detail: "Create or select an editable App Store version before changing its screenshots.",
-                kind: .error
-            )
-            return
-        }
-        if isDemoMode || screenshot.remoteID == nil {
-            workspace.screenshotsByApp[appID]?.removeAll(where: { $0.id == id })
+
+        guard let remoteID = screenshot.remoteID else {
+            removeLocallyDeletedScreenshot(screenshot, appID: appID)
             persist()
+            showToast(
+                "Unsaved screenshot removed",
+                detail: "The local draft was updated.",
+                kind: .success
+            )
             track(.screenshotOperationCompleted(
                 operation: .delete,
                 scope: screenshot.platform == .appStore ? .apple : .google,
@@ -1572,19 +1874,55 @@ public final class WorkspaceStore: ObservableObject {
             ))
             return
         }
+
+        if !isDemoMode,
+           screenshot.platform == .appStore,
+           app.appStoreApp?.hasEditableMetadataVersion != true {
+            showToast(
+                "Screenshot not deleted",
+                detail: "Create or select an editable App Store version before deleting its screenshots.",
+                kind: .error
+            )
+            return
+        }
+
+        deletingScreenshotIDs.insert(id)
+        showToast(
+            "Deleting screenshot…",
+            detail: "Updating \(screenshot.platform.rawValue) now.",
+            kind: .progress
+        )
         Task {
+            defer { deletingScreenshotIDs.remove(id) }
             do {
-                guard let remoteID = screenshot.remoteID else { return }
-                if screenshot.platform == .appStore {
-                    guard let credentials = try CredentialStore.apple() else { throw APIError.missingCredentials(.appStore) }
-                    try await AppStoreConnectClient(credentials: credentials).deleteScreenshot(remoteID: remoteID)
-                } else {
-                    guard let credentials = try CredentialStore.google(), let package = selectedApp?.playStoreApp?.bundleID else { throw APIError.missingCredentials(.playStore) }
-                    try await GooglePlayClient(credentials: credentials).deleteScreenshot(remoteID: remoteID, packageName: package, language: screenshot.locale, imageType: screenshot.screenshotSetID ?? "phoneScreenshots")
+                if !isDemoMode {
+                    switch screenshot.platform {
+                    case .appStore:
+                        guard let credentials = try CredentialStore.apple() else {
+                            throw APIError.missingCredentials(.appStore)
+                        }
+                        try await AppStoreConnectClient(credentials: credentials)
+                            .deleteScreenshot(remoteID: remoteID)
+                    case .playStore:
+                        guard let credentials = try CredentialStore.google(),
+                              let packageName = app.playStoreApp?.bundleID else {
+                            throw APIError.missingCredentials(.playStore)
+                        }
+                        try await GooglePlayClient(credentials: credentials).deleteScreenshot(
+                            remoteID: remoteID,
+                            packageName: packageName,
+                            language: screenshot.locale,
+                            imageType: screenshot.screenshotSetID ?? "phoneScreenshots"
+                        )
+                    }
                 }
-                workspace.screenshotsByApp[appID]?.removeAll(where: { $0.id == id })
+                removeLocallyDeletedScreenshot(screenshot, appID: appID)
                 persist()
-                showToast("Screenshot deleted", detail: "The remote store was updated.", kind: .success)
+                showToast(
+                    "Screenshot deleted",
+                    detail: "\(screenshot.platform.rawValue) was updated.",
+                    kind: .success
+                )
                 track(.screenshotOperationCompleted(
                     operation: .delete,
                     scope: screenshot.platform == .appStore ? .apple : .google,
@@ -1599,6 +1937,28 @@ public final class WorkspaceStore: ObservableObject {
                     result: .failure,
                     failure: EscaleAnalyticsEvent.failureCategory(for: error)
                 ))
+            }
+        }
+    }
+
+    private func removeLocallyDeletedScreenshot(
+        _ screenshot: StoreScreenshot,
+        appID: UUID
+    ) {
+        let galleryKey = screenshotGalleryKey(screenshot)
+        workspace.screenshotsByApp[appID]?.removeAll(where: { $0.id == screenshot.id })
+        removeScreenshotDraftFile(for: screenshot)
+        mutateScreenshotDraft(appID: appID) {
+            $0.deletedScreenshots.removeAll { $0.id == screenshot.id }
+        }
+        let galleryIsEmpty = workspace.screenshotsByApp[appID, default: []]
+            .contains { screenshotGalleryKey($0) == galleryKey } == false
+        let hasPendingDeletion = workspace.screenshotDraftsByApp?[appID]?
+            .deletedScreenshots
+            .contains { screenshotGalleryKey($0) == galleryKey } == true
+        if galleryIsEmpty && !hasPendingDeletion {
+            mutateScreenshotDraft(appID: appID) {
+                $0.dirtyGalleryKeys.remove(galleryKey)
             }
         }
     }
@@ -2154,8 +2514,18 @@ public final class WorkspaceStore: ObservableObject {
             mergeLocalizations(snapshot.localizations, platform: platform, appID: appID)
         }
         if !snapshot.unavailableSections.contains(.screenshots) {
-            workspace.screenshotsByApp[appID, default: []].removeAll(where: { $0.platform == platform })
-            workspace.screenshotsByApp[appID, default: []].append(contentsOf: snapshot.screenshots)
+            let dirtyGalleryKeys = workspace.screenshotDraftsByApp?[appID]?
+                .dirtyGalleryKeys
+                .filter { $0.hasPrefix(platform.rawValue + "|") } ?? []
+            workspace.screenshotsByApp[appID, default: []].removeAll {
+                $0.platform == platform
+                    && !dirtyGalleryKeys.contains(screenshotGalleryKey($0))
+            }
+            workspace.screenshotsByApp[appID, default: []].append(
+                contentsOf: snapshot.screenshots.filter {
+                    !dirtyGalleryKeys.contains(screenshotGalleryKey($0))
+                }
+            )
         }
         if !snapshot.unavailableSections.contains(.products) {
             mergeProducts(snapshot.products, platform: platform, appID: appID)

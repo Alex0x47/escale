@@ -365,6 +365,97 @@ func screenshotGalleryReordering() throws {
     #expect(movedToEnd.map(\.id) == [firstID, googleID, secondID, thirdID])
 }
 
+@Test("Screenshot drafts persist while legacy workspaces remain decodable")
+func screenshotDraftPersistence() throws {
+    let appID = UUID(uuidString: "30000000-0000-0000-0000-000000000001")!
+    let screenshot = StoreScreenshot(
+        id: UUID(uuidString: "30000000-0000-0000-0000-000000000002")!,
+        platform: .playStore,
+        locale: "en-US",
+        device: "Phone",
+        title: "Draft",
+        caption: "",
+        gradientStartHex: 0,
+        gradientEndHex: 0,
+        remoteID: "remote-image",
+        remoteURL: "https://example.com/preview.png",
+        screenshotSetID: "phoneScreenshots",
+        localDraftURL: "file:///tmp/draft.png"
+    )
+    let galleryKey = screenshotGalleryKey(screenshot)
+    var workspace = Workspace.empty
+    workspace.screenshotsByApp[appID] = [screenshot]
+    workspace.screenshotDraftsByApp = [
+        appID: ScreenshotDraftState(
+            dirtyGalleryKeys: [galleryKey],
+            deletedScreenshots: [screenshot]
+        )
+    ]
+
+    let encoded = try JSONEncoder().encode(workspace)
+    let decoded = try JSONDecoder().decode(Workspace.self, from: encoded)
+    #expect(decoded.screenshotDraftsByApp?[appID]?.dirtyGalleryKeys == [galleryKey])
+    #expect(decoded.screenshotDraftsByApp?[appID]?.deletedScreenshots == [screenshot])
+    #expect(decoded.screenshotsByApp[appID]?.first?.localDraftURL == "file:///tmp/draft.png")
+
+    var legacyObject = try #require(
+        JSONSerialization.jsonObject(with: encoded) as? [String: Any]
+    )
+    legacyObject.removeValue(forKey: "screenshotDraftsByApp")
+    let legacyData = try JSONSerialization.data(withJSONObject: legacyObject)
+    let legacyWorkspace = try JSONDecoder().decode(Workspace.self, from: legacyData)
+    #expect(legacyWorkspace.screenshotDraftsByApp == nil)
+}
+
+@Test("Screenshot gallery identity includes store, locale, and remote gallery")
+func screenshotGalleryIdentity() {
+    let base = StoreScreenshot(
+        id: UUID(),
+        platform: .appStore,
+        locale: "en-US",
+        device: "Phone",
+        title: "",
+        caption: "",
+        gradientStartHex: 0,
+        gradientEndHex: 0,
+        remoteID: nil,
+        remoteURL: nil,
+        screenshotSetID: "iphone-67"
+    )
+    var localized = base
+    localized.locale = "fr-FR"
+    var google = base
+    google.platform = .playStore
+    var anotherSet = base
+    anotherSet.screenshotSetID = "iphone-65"
+
+    #expect(screenshotGalleryKey(base) != screenshotGalleryKey(localized))
+    #expect(screenshotGalleryKey(base) != screenshotGalleryKey(google))
+    #expect(screenshotGalleryKey(base) != screenshotGalleryKey(anotherSet))
+}
+
+@Test("Google Play preview URLs resolve to their original-size rendition")
+func googlePlayOriginalScreenshotURL() throws {
+    let plainPreview = try #require(
+        URL(string: "https://lh3.googleusercontent.com/preview-token")
+    )
+    #expect(
+        googlePlayOriginalImageURL(from: plainPreview)?.absoluteString
+            == "https://lh3.googleusercontent.com/preview-token=s0"
+    )
+
+    let sizedPreview = try #require(
+        URL(string: "https://lh3.googleusercontent.com/preview-token=w288-h512-rw")
+    )
+    #expect(
+        googlePlayOriginalImageURL(from: sizedPreview)?.absoluteString
+            == "https://lh3.googleusercontent.com/preview-token=s0"
+    )
+    #expect(
+        googlePlayOriginalImageURL(from: URL(string: "https://example.com/image.jpg")!) == nil
+    )
+}
+
 @Test("Screenshot preflight validation follows each store's required dimensions")
 func screenshotUploadValidation() {
     let appStorePhone = ScreenshotImageProperties(
@@ -429,7 +520,19 @@ func screenshotUploadValidation() {
         screenshotUploadValidationIssue(
             properties: ScreenshotImageProperties(
                 width: 1_000,
-                height: 2_001,
+                height: 2_300,
+                fileSize: 100_000,
+                hasAlpha: false
+            ),
+            platform: .playStore,
+            device: "Phone"
+        ) == nil
+    )
+    #expect(
+        screenshotUploadValidationIssue(
+            properties: ScreenshotImageProperties(
+                width: 1_000,
+                height: 2_301,
                 fileSize: 100_000,
                 hasAlpha: false
             ),

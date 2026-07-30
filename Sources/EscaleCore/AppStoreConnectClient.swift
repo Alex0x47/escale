@@ -21,6 +21,11 @@ public struct StoreFetchProgress: Sendable {
 
 public typealias StoreFetchProgressHandler = @MainActor @Sendable (StoreFetchProgress) -> Void
 
+public struct AppStoreScreenshotReference: Sendable {
+    public let id: String
+    public let setID: String
+}
+
 public struct StoreSnapshot: Sendable {
     public var app: StoreApp
     public var localizations: [ListingLocalization]
@@ -447,7 +452,7 @@ public struct AppStoreConnectClient: Sendable {
         localization: ListingLocalization,
         existingSetID: String?,
         displayType: String = "APP_IPHONE_67"
-    ) async throws {
+    ) async throws -> AppStoreScreenshotReference {
         guard let localizationID = localization.appleVersionLocalizationID else {
             throw APIError.unsupported("Save this App Store localization before uploading screenshots.")
         }
@@ -499,6 +504,7 @@ public struct AppStoreConnectClient: Sendable {
             ]
         )
         try await waitForScreenshotProcessing(screenshotID: screenshotID)
+        return AppStoreScreenshotReference(id: screenshotID, setID: setID)
     }
 
     public func deleteScreenshot(remoteID: String) async throws {

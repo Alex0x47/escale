@@ -21,7 +21,7 @@
 
 <p align="center">
   <a href="https://www.useescale.com/">Website</a> ·
-  <a href="https://www.useescale.com/">Download Escale</a> ·
+  <a href="https://www.useescale.com/download">Download Escale</a> ·
   <a href="#community-or-pro">Compare editions</a> ·
   <a href="https://litefeedback.com/roadmap/Escale">Feedback and roadmap</a>
 </p>
@@ -55,7 +55,7 @@ listing and screenshot management, customer-review replies, single-locale
 translation, and PPP price calculation and preview.
 
 > [!TIP]
-> **Spend less time repeating store work with [Escale Pro](https://www.useescale.com/).**
+> **Spend less time repeating store work with [Escale Pro](https://www.useescale.com/download).**
 >
 > Pro includes everything in Community, then adds bulk translation across every
 > locale, one-click regional price application, reusable What's New templates,
@@ -64,7 +64,7 @@ translation, and PPP price calculation and preview.
 >
 > Escale Pro is currently **$99/year for one user on up to two Macs** and includes
 > current and future Pro features while the subscription is active.
-> [Explore Escale Pro →](https://www.useescale.com/)
+> [Explore Escale Pro →](https://www.useescale.com/download)
 
 | Capability | Community | Pro |
 | --- | --- | --- |

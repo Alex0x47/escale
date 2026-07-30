@@ -180,6 +180,14 @@ func localizationHealth() {
     let localizations = SampleData.localizations()
     #expect(localizations[0].completion == 1)
     #expect(localizations[2].completion < 0.5)
+
+    var appStoreOnly = localizations[0]
+    appStoreOnly.googleTitle = ""
+    appStoreOnly.googleSubtitle = ""
+    appStoreOnly.googleDescription = ""
+    #expect(appStoreOnly.completion(for: [.appStore]) == 1)
+    #expect(appStoreOnly.completion(for: [.playStore]) == 0)
+    #expect(appStoreOnly.completion(for: [.appStore, .playStore]) < 1)
 }
 
 @Test("Metadata limits follow the selected store")
@@ -187,10 +195,13 @@ func metadataLimits() {
     var localization = SampleData.localizations()[0]
     localization.subtitle = String(repeating: "a", count: 31)
     let appleViolations = ListingMetadataLimits(platforms: [.appStore]).violations(in: localization, platforms: [.appStore])
-    #expect(appleViolations.contains("Subtitle / short description exceeds 30 characters"))
+    #expect(appleViolations.contains("App Store subtitle exceeds 30 characters"))
     #expect(ListingMetadataLimits(platforms: [.playStore]).violations(in: localization, platforms: [.playStore]).isEmpty)
-    localization.subtitle = String(repeating: "a", count: 81)
-    #expect(!ListingMetadataLimits(platforms: [.playStore]).violations(in: localization, platforms: [.playStore]).isEmpty)
+    localization.googleSubtitle = String(repeating: "b", count: 81)
+    localization.googleTitle = String(repeating: "c", count: 31)
+    let googleViolations = ListingMetadataLimits(platforms: [.playStore]).violations(in: localization, platforms: [.playStore])
+    #expect(googleViolations.contains("Google Play short description exceeds 80 characters"))
+    #expect(googleViolations.contains("Google Play app name exceeds 30 characters"))
 }
 
 @Test("App Store editable states are explicit")
@@ -291,7 +302,9 @@ func listingMetadataFieldAccess() {
     ListingMetadataField.releaseNotes.set("A focused update.", in: &localization)
     #expect(ListingMetadataField.releaseNotes.value(in: localization) == "A focused update.")
     #expect(ListingMetadataField.subtitle.characterLimit(in: ListingMetadataLimits(platforms: [.appStore])) == 30)
-    #expect(ListingMetadataField.subtitle.characterLimit(in: ListingMetadataLimits(platforms: [.playStore])) == 80)
+    #expect(ListingMetadataField.shortDescription.characterLimit(in: ListingMetadataLimits(platforms: [.playStore])) == 80)
+    ListingMetadataField.shortDescription.set("A fuller Play value proposition.", in: &localization)
+    #expect(ListingMetadataField.shortDescription.value(in: localization) == "A fuller Play value proposition.")
 }
 
 @Test("What’s New templates validate reusable names and copy")
@@ -588,12 +601,59 @@ func platformSpecificListingMetadata() {
 
     var googleDisplay = listingLocalization(stored, displaying: [.playStore])
     #expect(googleDisplay.title == "Google title")
+    #expect(googleDisplay.shortDescription == "Google short description")
     #expect(googleDisplay.description == "Google full description")
     googleDisplay.title = "Updated Google title"
+    googleDisplay.shortDescription = "Updated Google short description"
+    googleDisplay.description = "Updated Google full description"
 
     let updated = applyingListingMetadata(from: googleDisplay, to: stored, platforms: [.playStore])
     #expect(updated.title == "Apple title")
+    #expect(updated.subtitle == "Apple subtitle")
+    #expect(updated.description == "Apple description")
     #expect(updated.googleTitle == "Updated Google title")
+    #expect(updated.shortDescription == "Updated Google short description")
+    #expect(updated.playStoreFullDescription == "Updated Google full description")
+
+    var appleDisplay = listingLocalization(stored, displaying: [.appStore])
+    appleDisplay.title = "Updated Apple title"
+    appleDisplay.description = "Updated Apple description"
+    let appleUpdate = applyingListingMetadata(from: appleDisplay, to: stored, platforms: [.appStore])
+    #expect(appleUpdate.title == "Updated Apple title")
+    #expect(appleUpdate.description == "Updated Apple description")
+    #expect(appleUpdate.playStoreTitle == "Google title")
+    #expect(appleUpdate.shortDescription == "Google short description")
+    #expect(appleUpdate.playStoreFullDescription == "Google full description")
+
+    var combinedDisplay = listingLocalization(stored, displaying: [.appStore, .playStore])
+    combinedDisplay.subtitle = "Updated Apple subtitle"
+    combinedDisplay.shortDescription = "Longer updated Google Play short description"
+    let combinedUpdate = applyingListingMetadata(
+        from: combinedDisplay,
+        to: stored,
+        platforms: [.appStore, .playStore]
+    )
+    #expect(combinedUpdate.subtitle == "Updated Apple subtitle")
+    #expect(combinedUpdate.shortDescription == "Longer updated Google Play short description")
+    #expect(combinedUpdate.googleTitle == "Google title")
+    #expect(combinedUpdate.googleDescription == "Google full description")
+}
+
+@Test("Google Play listing payload uses shortDescription independently from the App Store subtitle")
+func googlePlayListingFieldMapping() {
+    var localization = SampleData.localizations()[0]
+    localization.title = "Apple title"
+    localization.subtitle = "Apple subtitle"
+    localization.playStoreTitle = "Google title"
+    localization.shortDescription = "Google short description"
+    localization.playStoreFullDescription = "Google full description"
+
+    let attributes = googlePlayListingAttributes(localization, language: "en-US")
+
+    #expect(attributes["title"] == "Google title")
+    #expect(attributes["shortDescription"] == "Google short description")
+    #expect(attributes["fullDescription"] == "Google full description")
+    #expect(attributes["subtitle"] == nil)
 }
 
 @Test("Listing metadata is dirty only after its displayed copy changes")
@@ -1179,8 +1239,25 @@ func openAIListingASOInstructions() {
     #expect(instructions.contains("never keyword-stuff"))
     #expect(instructions.contains("title 30"))
     #expect(instructions.contains("subtitle 30"))
+    #expect(instructions.contains("short_description 80"))
     #expect(instructions.contains("keywords 100"))
     #expect(instructions.contains("do not rely on downstream truncation"))
+}
+
+@Test("Full-listing AI instructions include only fields from the selected store")
+func openAIStoreSpecificListingInstructions() {
+    let appStoreInstructions = OpenAIClient.listingTranslationInstructions(
+        limits: .storeListing(platforms: [.appStore])
+    )
+    let playStoreInstructions = OpenAIClient.listingTranslationInstructions(
+        limits: .storeListing(platforms: [.playStore])
+    )
+
+    #expect(appStoreInstructions.contains("App Store subtitle 30"))
+    #expect(!appStoreInstructions.contains("short_description 80"))
+    #expect(playStoreInstructions.contains("short_description 80"))
+    #expect(!playStoreInstructions.contains("promotional_text 170"))
+    #expect(!playStoreInstructions.contains("keywords 100"))
 }
 
 @Test("Field AI instructions apply field-specific ASO guidance and hard limits")
@@ -1203,6 +1280,7 @@ func openAIOutputLimits() {
     var translation = OpenAITranslation(
         title: String(repeating: "a", count: 50),
         subtitle: String(repeating: "b", count: 50),
+        shortDescription: String(repeating: "g", count: 100),
         promotionalText: String(repeating: "c", count: 200),
         description: String(repeating: "d", count: 4_100),
         keywords: String(repeating: "e", count: 120),
@@ -1212,6 +1290,7 @@ func openAIOutputLimits() {
 
     #expect(translation.title.count == 30)
     #expect(translation.subtitle.count == 30)
+    #expect(translation.shortDescription.count == 80)
     #expect(translation.promotionalText.count == 170)
     #expect(translation.description.count == 4_000)
     #expect(translation.keywords.count == 100)

@@ -149,12 +149,7 @@ public struct GooglePlayClient: Sendable {
         let editID = try await createEdit(packageName: packageName)
         do {
             let language = localization.googleLanguage ?? localization.locale
-            let body: [String: Any] = [
-                "language": language,
-                "title": localization.title,
-                "shortDescription": localization.subtitle,
-                "fullDescription": localization.description
-            ]
+            let body = googlePlayListingAttributes(localization, language: language)
             _ = try await request(
                 path: "/applications/\(encoded(packageName))/edits/\(encoded(editID))/listings/\(encoded(language))",
                 method: "PUT",
@@ -435,14 +430,14 @@ public struct GooglePlayClient: Sendable {
         return response.array("listings").compactMap { listing in
             guard let language = listing.string("language") else { return nil }
             let title = listing.string("title") ?? ""
-            let subtitle = listing.string("shortDescription") ?? ""
+            let shortDescription = listing.string("shortDescription") ?? ""
             let description = listing.string("fullDescription") ?? ""
             return ListingLocalization(
                 id: UUID(), locale: language, language: Locale.current.localizedString(forIdentifier: language) ?? language,
-                title: title, subtitle: subtitle,
+                title: title, subtitle: "",
                 promotionalText: "", description: description, keywords: "", releaseNotes: "",
                 dirtyPlatforms: [], lastSaved: Date(), appleVersionLocalizationID: nil, appleAppInfoLocalizationID: nil,
-                googleLanguage: language, googleTitle: title, googleSubtitle: subtitle, googleDescription: description
+                googleLanguage: language, googleTitle: title, googleSubtitle: shortDescription, googleDescription: description
             )
         }
     }
@@ -904,6 +899,18 @@ public struct GooglePlayClient: Sendable {
     private func encoded(_ value: String) -> String {
         value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? value
     }
+}
+
+func googlePlayListingAttributes(
+    _ localization: ListingLocalization,
+    language: String
+) -> [String: String] {
+    [
+        "language": language,
+        "title": localization.playStoreTitle,
+        "shortDescription": localization.shortDescription,
+        "fullDescription": localization.playStoreFullDescription
+    ]
 }
 
 func googlePlayRatingSummary(fromHTML data: Data) -> StoreRatingSummary? {

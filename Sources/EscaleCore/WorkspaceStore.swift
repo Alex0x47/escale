@@ -163,7 +163,9 @@ public final class WorkspaceStore: ObservableObject {
 
     public var selectedApp: UnifiedApp? { workspace.apps.first(where: { $0.id == selectedAppID }) }
     public var selectedLocalizations: [ListingLocalization] {
-        let platforms = selectedEditingPlatforms
+        localizations(displaying: selectedEditingPlatforms)
+    }
+    public func localizations(displaying platforms: Set<StorePlatform>) -> [ListingLocalization] {
         return (selectedAppID.flatMap { workspace.localizationsByApp[$0] } ?? [])
             .map { listingLocalization($0, displaying: platforms) }
     }
@@ -211,13 +213,18 @@ public final class WorkspaceStore: ObservableObject {
         platformFilter.platforms.intersection(selectedAvailablePlatforms)
     }
     public var selectedPrimaryLocalization: ListingLocalization? {
-        let preferredLocale: String? = if selectedEditingPlatforms == [.playStore] {
+        primarySelectedLocalization(displaying: selectedEditingPlatforms)
+    }
+    public func primarySelectedLocalization(
+        displaying platforms: Set<StorePlatform>
+    ) -> ListingLocalization? {
+        let preferredLocale: String? = if platforms == [.playStore] {
             selectedApp?.playStoreApp?.primaryLocale
         } else {
             selectedApp?.appStoreApp?.primaryLocale ?? selectedApp?.playStoreApp?.primaryLocale
         }
         return primaryLocalization(
-            in: selectedLocalizations,
+            in: localizations(displaying: platforms),
             preferredLocale: preferredLocale
         )
     }
@@ -487,6 +494,13 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     public func localizationBinding(id: UUID) -> Binding<ListingLocalization> {
+        localizationBinding(id: id, displaying: selectedEditingPlatforms)
+    }
+
+    public func localizationBinding(
+        id: UUID,
+        displaying requestedPlatforms: Set<StorePlatform>
+    ) -> Binding<ListingLocalization> {
         Binding(
             get: { [weak self] in
                 guard let self, let appID = self.selectedAppID,
@@ -497,18 +511,27 @@ public final class WorkspaceStore: ObservableObject {
                         appleVersionLocalizationID: nil, appleAppInfoLocalizationID: nil, googleLanguage: nil
                     )
                 }
-                return listingLocalization(item, displaying: self.selectedEditingPlatforms)
+                let targets = requestedPlatforms.intersection(self.availablePlatforms(for: appID))
+                return listingLocalization(item, displaying: targets)
             },
             set: { [weak self] updated in
                 guard let self, let appID = self.selectedAppID,
                       let index = self.workspace.localizationsByApp[appID]?.firstIndex(where: { $0.id == id }) else { return }
                 let available = self.availablePlatforms(for: appID)
-                let targets = self.platformFilter.platforms.intersection(available)
+                let targets = requestedPlatforms.intersection(available)
                 let stored = self.workspace.localizationsByApp[appID]![index]
                 guard listingMetadataHasChanges(updated, comparedTo: stored, displaying: targets) else { return }
                 var copy = applyingListingMetadata(from: updated, to: stored, platforms: targets)
                 guard copy != stored else { return }
-                copy.dirtyPlatforms.formUnion(targets)
+                let changedPlatforms = targets.filter { platform in
+                    let platformCopy = listingLocalization(copy, displaying: [platform])
+                    return listingMetadataHasChanges(
+                        platformCopy,
+                        comparedTo: stored,
+                        displaying: [platform]
+                    )
+                }
+                copy.dirtyPlatforms.formUnion(changedPlatforms)
                 self.workspace.localizationsByApp[appID]?[index] = copy
                 self.scheduleEditorPersistence()
             }
@@ -814,12 +837,28 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     public func translateLocalization(id: UUID, from sourceID: UUID) async {
+        guard let appID = selectedAppID else { return }
+        await translateLocalization(
+            id: id,
+            from: sourceID,
+            platforms: platformFilter.platforms.intersection(availablePlatforms(for: appID))
+        )
+    }
+
+    public func translateLocalization(
+        id: UUID,
+        from sourceID: UUID,
+        platforms requestedPlatforms: Set<StorePlatform>
+    ) async {
         guard let appID = selectedAppID,
               let storedSource = workspace.localizationsByApp[appID]?.first(where: { $0.id == sourceID }),
               let target = workspace.localizationsByApp[appID]?.first(where: { $0.id == id }) else { return }
         do {
             guard let apiKey = try CredentialStore.openAIAPIKey() else { throw OpenAIClientError.missingAPIKey }
-            let targetPlatforms = platformFilter.platforms.intersection(availablePlatforms(for: appID))
+            let targetPlatforms = requestedPlatforms.intersection(availablePlatforms(for: appID))
+            guard !targetPlatforms.isEmpty else {
+                throw APIError.unsupported("Select a connected store before translating metadata.")
+            }
             let source = listingLocalization(storedSource, displaying: targetPlatforms)
             let limits = OpenAITranslationLimits.storeListing(platforms: targetPlatforms)
             showToast(
@@ -838,6 +877,7 @@ public final class WorkspaceStore: ObservableObject {
             var displayedTarget = listingLocalization(storedTarget, displaying: targetPlatforms)
             displayedTarget.title = translation.title
             displayedTarget.subtitle = translation.subtitle
+            displayedTarget.shortDescription = translation.shortDescription
             displayedTarget.promotionalText = translation.promotionalText
             displayedTarget.description = translation.description
             displayedTarget.keywords = translation.keywords
@@ -871,28 +911,71 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     public func translateField(_ field: ListingMetadataField, from sourceID: UUID, to targetID: UUID) async {
-        await translateField(field, from: sourceID, to: [targetID], announcesAllLocales: false)
+        guard let appID = selectedAppID else { return }
+        await translateField(
+            field,
+            from: sourceID,
+            to: [targetID],
+            platforms: platformFilter.platforms.intersection(availablePlatforms(for: appID)),
+            announcesAllLocales: false
+        )
+    }
+
+    public func translateField(
+        _ field: ListingMetadataField,
+        from sourceID: UUID,
+        to targetID: UUID,
+        platforms: Set<StorePlatform>
+    ) async {
+        await translateField(
+            field,
+            from: sourceID,
+            to: [targetID],
+            platforms: platforms,
+            announcesAllLocales: false
+        )
     }
 
     public func translateFieldToAllLocales(_ field: ListingMetadataField, from sourceID: UUID) async {
+        guard let appID = selectedAppID else { return }
+        await translateFieldToAllLocales(
+            field,
+            from: sourceID,
+            platforms: platformFilter.platforms.intersection(availablePlatforms(for: appID))
+        )
+    }
+
+    public func translateFieldToAllLocales(
+        _ field: ListingMetadataField,
+        from sourceID: UUID,
+        platforms: Set<StorePlatform>
+    ) async {
         guard requireAccess(to: .bulkTranslations) else { return }
         guard let appID = selectedAppID else { return }
         let targetIDs = workspace.localizationsByApp[appID, default: []]
             .filter { $0.id != sourceID }
             .map(\.id)
-        await translateField(field, from: sourceID, to: targetIDs, announcesAllLocales: true)
+        await translateField(
+            field,
+            from: sourceID,
+            to: targetIDs,
+            platforms: platforms,
+            announcesAllLocales: true
+        )
     }
 
     private func translateField(
         _ field: ListingMetadataField,
         from sourceID: UUID,
         to targetIDs: [UUID],
+        platforms requestedPlatforms: Set<StorePlatform>,
         announcesAllLocales: Bool
     ) async {
         guard let appID = selectedAppID,
               let storedSource = workspace.localizationsByApp[appID]?.first(where: { $0.id == sourceID }) else { return }
-        let targetPlatforms = platformFilter.platforms.intersection(availablePlatforms(for: appID))
-        let source = listingLocalization(storedSource, displaying: targetPlatforms)
+        let targetPlatforms = requestedPlatforms.intersection(availablePlatforms(for: appID))
+        let fieldPlatforms = field.supportedPlatforms.intersection(targetPlatforms)
+        let source = listingLocalization(storedSource, displaying: fieldPlatforms)
         let sourceText = field.value(in: source)
         guard !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             showToast("Nothing to translate", detail: "Add \(field.displayName.lowercased()) in the primary locale first.", kind: .error)
@@ -908,10 +991,10 @@ public final class WorkspaceStore: ObservableObject {
 
         do {
             guard let apiKey = try CredentialStore.openAIAPIKey() else { throw OpenAIClientError.missingAPIKey }
-            guard !targetPlatforms.isEmpty else {
+            guard !fieldPlatforms.isEmpty else {
                 throw APIError.unsupported("Select a connected store before translating metadata.")
             }
-            let metadataLimits = ListingMetadataLimits(platforms: targetPlatforms)
+            let metadataLimits = ListingMetadataLimits(platforms: fieldPlatforms)
             let characterLimit = field.characterLimit(in: metadataLimits)
             let client = OpenAIClient(apiKey: apiKey)
             let progressDetail = announcesAllLocales
@@ -930,21 +1013,21 @@ public final class WorkspaceStore: ObservableObject {
                         targetLocale: target.locale,
                         targetLanguage: target.language,
                         characterLimit: characterLimit,
-                        platforms: targetPlatforms
+                        platforms: fieldPlatforms
                     )
                     guard let targetIndex = workspace.localizationsByApp[appID]?.firstIndex(where: { $0.id == target.id }) else {
                         failures.append(target.language)
                         continue
                     }
                     let storedTarget = workspace.localizationsByApp[appID]![targetIndex]
-                    var displayedTarget = listingLocalization(storedTarget, displaying: targetPlatforms)
+                    var displayedTarget = listingLocalization(storedTarget, displaying: fieldPlatforms)
                     field.set(translatedText, in: &displayedTarget)
                     var updated = applyingListingMetadata(
                         from: displayedTarget,
                         to: storedTarget,
-                        platforms: targetPlatforms
+                        platforms: fieldPlatforms
                     )
-                    updated.dirtyPlatforms.formUnion(targetPlatforms)
+                    updated.dirtyPlatforms.formUnion(fieldPlatforms)
                     workspace.localizationsByApp[appID]?[targetIndex] = updated
                     translatedCount += 1
                 } catch {
@@ -1128,28 +1211,40 @@ public final class WorkspaceStore: ObservableObject {
 
     public func saveLocalization(id: UUID) async {
         guard let appID = selectedAppID else { return }
-        await saveLocalization(id: id, appID: appID)
+        guard let localization = workspace.localizationsByApp[appID]?.first(where: { $0.id == id }) else { return }
+        await saveLocalization(id: id, appID: appID, platforms: localization.dirtyPlatforms)
     }
 
     public func saveEditedLocalizations() async {
         guard let appID = selectedAppID else { return }
+        let dirtyPlatforms = workspace.localizationsByApp[appID, default: []]
+            .reduce(into: Set<StorePlatform>()) { $0.formUnion($1.dirtyPlatforms) }
+        await saveEditedLocalizations(platforms: dirtyPlatforms)
+    }
+
+    public func saveEditedLocalizations(platforms requestedPlatforms: Set<StorePlatform>) async {
+        guard let appID = selectedAppID else { return }
         let localizationIDs = workspace.localizationsByApp[appID, default: []]
-            .filter { !$0.dirtyPlatforms.isEmpty }
+            .filter { !$0.dirtyPlatforms.isDisjoint(with: requestedPlatforms) }
             .map(\.id)
         guard !localizationIDs.isEmpty else {
             showToast("Everything is up to date", detail: "No local changes to publish.", kind: .neutral)
             return
         }
         for id in localizationIDs {
-            await saveLocalization(id: id, appID: appID)
+            await saveLocalization(id: id, appID: appID, platforms: requestedPlatforms)
         }
     }
 
-    private func saveLocalization(id: UUID, appID: UUID) async {
+    private func saveLocalization(
+        id: UUID,
+        appID: UUID,
+        platforms requestedPlatforms: Set<StorePlatform>
+    ) async {
         guard let app = workspace.apps.first(where: { $0.id == appID }),
               let index = workspace.localizationsByApp[appID]?.firstIndex(where: { $0.id == id }) else { return }
         var localization = workspace.localizationsByApp[appID]![index]
-        let targets = localization.dirtyPlatforms
+        let targets = localization.dirtyPlatforms.intersection(requestedPlatforms)
         guard !targets.isEmpty else {
             showToast("Everything is up to date", detail: "No local changes to publish.", kind: .neutral)
             return
@@ -1167,7 +1262,7 @@ public final class WorkspaceStore: ObservableObject {
         }
         if isDemoMode {
             try? await Task.sleep(for: .milliseconds(500))
-            localization.dirtyPlatforms = []
+            localization.dirtyPlatforms.subtract(targets)
             localization.lastSaved = Date()
             workspace.localizationsByApp[appID]?[index] = localization
             persist()
@@ -2601,9 +2696,9 @@ public final class WorkspaceStore: ObservableObject {
                     local.appleAppInfoLocalizationID = remote.appleAppInfoLocalizationID
                 } else {
                     local.googleLanguage = remote.googleLanguage
-                    local.googleTitle = remote.googleTitle ?? remote.title
-                    local.googleSubtitle = remote.googleSubtitle ?? remote.subtitle
-                    local.googleDescription = remote.googleDescription ?? remote.description
+                    local.playStoreTitle = remote.playStoreTitle
+                    local.shortDescription = remote.shortDescription
+                    local.playStoreFullDescription = remote.playStoreFullDescription
                 }
                 local.lastSaved = Date()
                 workspace.localizationsByApp[appID]![index] = local

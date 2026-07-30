@@ -7,6 +7,7 @@ public struct ListingEditorView: View {
 
     @EnvironmentObject private var store: WorkspaceStore
     @State private var selectedLocalizationID: UUID?
+    @State private var preferredEditingPlatform: StorePlatform = .appStore
     @State private var localizationFilter = ""
     @State private var selectedField: ListingMetadataField = .promotionalText
     @State private var isTranslating = false
@@ -24,12 +25,20 @@ public struct ListingEditorView: View {
         .background(Theme.canvas)
         .navigationTitle("Store listing")
         .onAppear {
-            if selectedLocalizationID == nil { selectedLocalizationID = store.selectedLocalizations.first?.id }
+            alignEditingPlatformWithFilter()
+            if selectedLocalizationID == nil { selectedLocalizationID = displayedLocalizations.first?.id }
         }
         .onChange(of: store.selectedAppID) { _, _ in
-            selectedLocalizationID = store.selectedLocalizations.first?.id
+            alignEditingPlatformWithFilter()
+            selectedLocalizationID = displayedLocalizations.first?.id
         }
-        .onChange(of: store.selectedLocalizations.map(\.id)) { _, ids in
+        .onChange(of: store.platformFilter) { _, _ in
+            alignEditingPlatformWithFilter()
+        }
+        .onChange(of: store.selectedAvailablePlatforms) { _, _ in
+            alignEditingPlatformWithFilter()
+        }
+        .onChange(of: displayedLocalizations.map(\.id)) { _, ids in
             if selectedLocalizationID.map(ids.contains) != true {
                 selectedLocalizationID = ids.first
             }
@@ -43,11 +52,49 @@ public struct ListingEditorView: View {
         }
     }
 
+    private var activeEditingPlatform: StorePlatform {
+        let available = store.platformFilter.platforms.intersection(store.selectedAvailablePlatforms)
+        if available.contains(preferredEditingPlatform) {
+            return preferredEditingPlatform
+        }
+        return StorePlatform.allCases.first(where: available.contains) ?? preferredEditingPlatform
+    }
+
+    private var activeEditingPlatforms: Set<StorePlatform> {
+        [activeEditingPlatform]
+    }
+
+    private var displayedLocalizations: [ListingLocalization] {
+        store.localizations(displaying: activeEditingPlatforms)
+    }
+
+    private var primaryLocalization: ListingLocalization? {
+        store.primarySelectedLocalization(displaying: activeEditingPlatforms)
+    }
+
+    private var selectableEditingPlatforms: [StorePlatform] {
+        StorePlatform.allCases.filter {
+            store.platformFilter.platforms.contains($0)
+                && store.selectedAvailablePlatforms.contains($0)
+        }
+    }
+
+    private func alignEditingPlatformWithFilter() {
+        if let onlyPlatform = selectableEditingPlatforms.count == 1
+            ? selectableEditingPlatforms.first
+            : nil {
+            preferredEditingPlatform = onlyPlatform
+        } else if !selectableEditingPlatforms.contains(preferredEditingPlatform),
+                  let first = selectableEditingPlatforms.first {
+            preferredEditingPlatform = first
+        }
+    }
+
     private var localeSidebar: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 5) {
                 Text("LOCALIZATIONS").font(.caption2.weight(.bold)).tracking(0.8).foregroundStyle(.secondary)
-                Text("\(store.selectedLocalizations.count) languages").font(.caption).foregroundStyle(.secondary)
+                Text("\(displayedLocalizations.count) languages").font(.caption).foregroundStyle(.secondary)
             }
             .padding(16)
             Divider()
@@ -76,7 +123,7 @@ public struct ListingEditorView: View {
             ScrollView {
                 LazyVStack(spacing: 4) {
                     ForEach(filteredLocalizations) { localization in
-                        let completion = localization.completion(for: store.selectedEditingPlatforms)
+                        let completion = localization.completion(for: activeEditingPlatforms)
                         Button {
                             selectedLocalizationID = localization.id
                         } label: {
@@ -94,7 +141,7 @@ public struct ListingEditorView: View {
                                 VStack(alignment: .leading, spacing: 2) {
                                     HStack(spacing: 5) {
                                         Text(localization.language).font(.subheadline.weight(.semibold))
-                                        if localization.id == store.selectedPrimaryLocalization?.id {
+                                        if localization.id == primaryLocalization?.id {
                                             Text("PRIMARY")
                                                 .font(.system(size: 7, weight: .bold))
                                                 .foregroundStyle(Theme.accent)
@@ -106,7 +153,7 @@ public struct ListingEditorView: View {
                                     Text(localization.locale).font(.caption2.monospaced()).foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                if !localization.dirtyPlatforms.isEmpty {
+                                if localization.dirtyPlatforms.contains(activeEditingPlatform) {
                                     Circle().fill(Color.orange).frame(width: 7, height: 7)
                                 }
                             }
@@ -132,9 +179,9 @@ public struct ListingEditorView: View {
                 ForEach(supportedLocales, id: \.code) { item in
                     Button(item.name) {
                         store.addLocalization(locale: item.code, language: item.name)
-                        selectedLocalizationID = store.selectedLocalizations.first(where: { $0.locale == item.code })?.id
+                        selectedLocalizationID = displayedLocalizations.first(where: { $0.locale == item.code })?.id
                     }
-                    .disabled(store.selectedLocalizations.contains(where: { $0.locale == item.code }))
+                    .disabled(displayedLocalizations.contains(where: { $0.locale == item.code }))
                 }
             } label: {
                 Label("Add localization", systemImage: "plus")
@@ -149,13 +196,13 @@ public struct ListingEditorView: View {
     private var filteredLocalizations: [ListingLocalization] {
         let query = localizationFilter.trimmingCharacters(in: .whitespacesAndNewlines)
         var localizations = query.isEmpty
-            ? store.selectedLocalizations
-            : store.selectedLocalizations.filter {
+            ? displayedLocalizations
+            : displayedLocalizations.filter {
                 $0.language.localizedStandardContains(query)
                     || $0.locale.localizedStandardContains(query)
             }
 
-        if let primaryID = store.selectedPrimaryLocalization?.id,
+        if let primaryID = primaryLocalization?.id,
            let primaryIndex = localizations.firstIndex(where: { $0.id == primaryID }) {
             localizations.insert(localizations.remove(at: primaryIndex), at: 0)
         }
@@ -180,8 +227,8 @@ public struct ListingEditorView: View {
     @ViewBuilder
     private var editor: some View {
         if let selectedLocalizationID,
-           let localization = store.selectedLocalizations.first(where: { $0.id == selectedLocalizationID }) {
-            let binding = store.localizationBinding(id: selectedLocalizationID)
+           let localization = displayedLocalizations.first(where: { $0.id == selectedLocalizationID }) {
+            let binding = store.localizationBinding(id: selectedLocalizationID, displaying: activeEditingPlatforms)
             VStack(spacing: 0) {
                 editorHeader(localization)
                 Divider()
@@ -199,65 +246,95 @@ public struct ListingEditorView: View {
     }
 
     private func editorHeader(_ localization: ListingLocalization) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(localization.language).font(.title3.weight(.bold))
-                HStack(spacing: 6) {
-                    Text(localization.locale).font(.caption.monospaced()).foregroundStyle(.secondary)
-                    if localization.id == store.selectedPrimaryLocalization?.id {
-                        Text("Primary locale").font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
-                    }
-                    if !localization.dirtyPlatforms.isEmpty {
-                        Text("Unsaved changes").font(.caption.weight(.semibold)).foregroundStyle(.orange)
-                    } else {
-                        Text("Synced").font(.caption.weight(.semibold)).foregroundStyle(.green)
-                    }
-                }
-            }
-            Spacer()
-            Button {
-                guard let source = store.selectedPrimaryLocalization else { return }
-                isTranslating = true
-                Task {
-                    await store.translateLocalization(id: localization.id, from: source.id)
-                    isTranslating = false
-                }
-            } label: {
-                if isTranslating { ProgressView().controlSize(.small) } else { Label("Translate full listing", systemImage: "sparkles") }
-            }
-            .buttonStyle(.bordered)
-            .disabled(
-                localization.id == store.selectedPrimaryLocalization?.id
-                    || isTranslating
-                    || !translatingFields.isEmpty
-                    || store.selectedPrimaryLocalization == nil
-            )
-            Button {
-                isSavingLocalizations = true
-                Task {
-                    await store.saveEditedLocalizations()
-                    isSavingLocalizations = false
-                }
-            } label: {
-                if isSavingLocalizations {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(localization.language).font(.title3.weight(.bold))
                     HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Saving…")
+                        Text(localization.locale).font(.caption.monospaced()).foregroundStyle(.secondary)
+                        if localization.id == primaryLocalization?.id {
+                            Text("Primary locale").font(.caption.weight(.semibold)).foregroundStyle(Theme.accent)
+                        }
+                        if localization.dirtyPlatforms.contains(activeEditingPlatform) {
+                            Text("Unsaved changes").font(.caption.weight(.semibold)).foregroundStyle(.orange)
+                        } else {
+                            Text("Synced").font(.caption.weight(.semibold)).foregroundStyle(.green)
+                        }
                     }
-                } else {
-                    Label("Save to stores", systemImage: "arrow.up.circle.fill")
                 }
+                Spacer()
+                Button {
+                    guard let source = primaryLocalization else { return }
+                    let platforms = activeEditingPlatforms
+                    isTranslating = true
+                    Task {
+                        await store.translateLocalization(
+                            id: localization.id,
+                            from: source.id,
+                            platforms: platforms
+                        )
+                        isTranslating = false
+                    }
+                } label: {
+                    if isTranslating { ProgressView().controlSize(.small) } else { Label("Translate full listing", systemImage: "sparkles") }
+                }
+                .buttonStyle(.bordered)
+                .disabled(
+                    localization.id == primaryLocalization?.id
+                        || isTranslating
+                        || !translatingFields.isEmpty
+                        || primaryLocalization == nil
+                )
+                Button {
+                    let platforms = activeEditingPlatforms
+                    isSavingLocalizations = true
+                    Task {
+                        await store.saveEditedLocalizations(platforms: platforms)
+                        isSavingLocalizations = false
+                    }
+                } label: {
+                    if isSavingLocalizations {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Saving…")
+                        }
+                    } else {
+                        Label("Save to \(activeEditingPlatform.rawValue)", systemImage: "arrow.up.circle.fill")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(
+                    isSavingLocalizations
+                        || editedLocalizations.isEmpty
+                        || editedLocalizations.contains(where: { !metadataViolations($0).isEmpty })
+                )
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(
-                isSavingLocalizations
-                    || editedLocalizations.isEmpty
-                    || editedLocalizations.contains(where: { !metadataViolations($0).isEmpty })
-            )
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+
+            if selectableEditingPlatforms.count > 1 {
+                Divider().padding(.horizontal, 20)
+                HStack(spacing: 12) {
+                    Text("EDITING STORE")
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.65)
+                        .foregroundStyle(.secondary)
+                    Picker("Editing store", selection: $preferredEditingPlatform) {
+                        ForEach(selectableEditingPlatforms) { platform in
+                            Label(platform.rawValue, systemImage: platform.icon)
+                                .tag(platform)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 260)
+                    Spacer()
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+            }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
         .background(Theme.card.opacity(0.55))
     }
 
@@ -268,23 +345,31 @@ public struct ListingEditorView: View {
                 HStack {
                     Text("Metadata").font(.headline)
                     Spacer()
-                    HStack(spacing: 6) {
-                        ForEach(store.platformFilter.platforms.sorted(by: { $0.rawValue < $1.rawValue })) { platform in
-                            PlatformBadge(platform: platform)
-                        }
+                    if selectableEditingPlatforms.count == 1 {
+                        PlatformBadge(platform: activeEditingPlatform)
                     }
                 }
                 field(text: binding.title, limit: 30, axis: .horizontal, focus: .title, localization: localization)
-                field(text: binding.subtitle, limit: limits.subtitle, axis: .horizontal, focus: .subtitle, localization: localization)
-                if store.selectedEditingPlatforms.contains(.appStore) {
+                if activeEditingPlatform == .appStore {
+                    field(text: binding.subtitle, limit: limits.subtitle, axis: .horizontal, focus: .subtitle, localization: localization)
                     field(text: binding.promotionalText, limit: 170, axis: .vertical, focus: .promotionalText, localization: localization, minHeight: 88)
                 }
+                if activeEditingPlatform == .playStore {
+                    field(
+                        text: shortDescriptionBinding(binding),
+                        limit: limits.shortDescription,
+                        axis: .vertical,
+                        focus: .shortDescription,
+                        localization: localization,
+                        minHeight: 70
+                    )
+                }
                 field(text: binding.description, limit: 4_000, axis: .vertical, focus: .description, localization: localization, minHeight: 175)
-                if store.selectedEditingPlatforms.contains(.appStore) {
+                if activeEditingPlatform == .appStore {
                     field(text: binding.keywords, limit: 100, axis: .vertical, focus: .keywords, localization: localization, minHeight: 70)
                     field(text: binding.releaseNotes, limit: 4_000, axis: .vertical, focus: .releaseNotes, localization: localization, minHeight: 110)
                 }
-                if store.selectedEditingPlatforms.contains(.playStore) {
+                if activeEditingPlatform == .playStore {
                     googlePlayReleaseNotesEditor(localization: localization)
                 }
             }
@@ -427,15 +512,26 @@ public struct ListingEditorView: View {
     }
 
     private var limits: ListingMetadataLimits {
-        ListingMetadataLimits(platforms: store.platformFilter.platforms.intersection(store.selectedAvailablePlatforms))
+        ListingMetadataLimits(platforms: activeEditingPlatforms)
     }
 
     private var editedLocalizations: [ListingLocalization] {
-        store.selectedLocalizations.filter { !$0.dirtyPlatforms.isEmpty }
+        displayedLocalizations.filter { $0.dirtyPlatforms.contains(activeEditingPlatform) }
     }
 
     private func metadataViolations(_ localization: ListingLocalization) -> [String] {
-        limits.violations(in: localization, platforms: store.platformFilter.platforms.intersection(store.selectedAvailablePlatforms))
+        limits.violations(in: localization, platforms: activeEditingPlatforms)
+    }
+
+    private func shortDescriptionBinding(_ localization: Binding<ListingLocalization>) -> Binding<String> {
+        Binding(
+            get: { localization.wrappedValue.shortDescription },
+            set: { value in
+                var updated = localization.wrappedValue
+                updated.shortDescription = value
+                localization.wrappedValue = updated
+            }
+        )
     }
 
     private func field(
@@ -458,11 +554,20 @@ public struct ListingEditorView: View {
                 fieldTranslationButton(focus, localization: localization)
                 Text("\(text.wrappedValue.count) / \(limit)").font(.caption.monospacedDigit()).foregroundStyle(text.wrappedValue.count > limit ? .red : .secondary)
             }
-            TextField(focus.displayName, text: text, axis: axis)
-                .textFieldStyle(.plain)
-                .lineLimit(axis == .vertical ? 2...12 : 1...1)
-                .padding(12)
-                .frame(minHeight: minHeight, alignment: .topLeading)
+            Group {
+                if axis == .vertical {
+                    TextEditor(text: text)
+                        .font(.body)
+                        .scrollContentBackground(.hidden)
+                        .padding(8)
+                        .frame(height: max(minHeight, 70), alignment: .topLeading)
+                } else {
+                    TextField(focus.displayName, text: text)
+                        .textFieldStyle(.plain)
+                        .lineLimit(1)
+                        .padding(12)
+                }
+            }
                 .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(selectedField == focus ? Theme.accent.opacity(0.55) : Theme.border))
                 .onTapGesture { selectedField = focus }
@@ -545,13 +650,13 @@ public struct ListingEditorView: View {
         _ field: ListingMetadataField,
         localization: ListingLocalization
     ) -> some View {
-        let primary = store.selectedPrimaryLocalization
+        let primary = primaryLocalization
         let isPrimary = localization.id == primary?.id
         let isRunning = translatingFields.contains(field)
         let sourceIsEmpty = primary.map {
             field.value(in: $0).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         } ?? true
-        let hasTargets = store.selectedLocalizations.contains(where: { $0.id != localization.id })
+        let hasTargets = displayedLocalizations.contains(where: { $0.id != localization.id })
 
         return Button {
             guard let primary else { return }
@@ -560,11 +665,21 @@ public struct ListingEditorView: View {
                 return
             }
             translatingFields.insert(field)
+            let platforms = activeEditingPlatforms
             Task {
                 if isPrimary {
-                    await store.translateFieldToAllLocales(field, from: primary.id)
+                    await store.translateFieldToAllLocales(
+                        field,
+                        from: primary.id,
+                        platforms: platforms
+                    )
                 } else {
-                    await store.translateField(field, from: primary.id, to: localization.id)
+                    await store.translateField(
+                        field,
+                        from: primary.id,
+                        to: localization.id,
+                        platforms: platforms
+                    )
                 }
                 translatingFields.remove(field)
             }
@@ -610,7 +725,7 @@ public struct ListingEditorView: View {
             HStack {
                 Text("LIVE PREVIEW").font(.caption2.weight(.bold)).tracking(0.8).foregroundStyle(.secondary)
                 Spacer()
-                PlatformBadge(platform: store.platformFilter == .playStore ? .playStore : .appStore)
+                PlatformBadge(platform: activeEditingPlatform)
             }
             .padding(16)
             Divider()
@@ -627,11 +742,11 @@ public struct ListingEditorView: View {
                             .font(.system(size: 8)).foregroundStyle(.orange)
                         }
                     }
-                    if store.platformFilter != .playStore {
+                    if activeEditingPlatform == .appStore {
                         Text(localization.promotionalText).font(.subheadline).lineSpacing(3)
                     }
                     Divider()
-                    if store.platformFilter != .playStore {
+                    if activeEditingPlatform == .appStore {
                         VStack(alignment: .leading, spacing: 7) {
                             Text("What’s New").font(.headline)
                             Text(localization.releaseNotes).font(.caption).foregroundStyle(.secondary).lineSpacing(3)

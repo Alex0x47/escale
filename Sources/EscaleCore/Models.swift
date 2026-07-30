@@ -242,9 +242,27 @@ public struct ListingLocalization: Identifiable, Codable, Hashable, Sendable {
     public var appleVersionLocalizationID: String?
     public var appleAppInfoLocalizationID: String?
     public var googleLanguage: String?
+    // These persisted names predate the explicit per-store editor. Keep them so
+    // existing workspaces decode without migration; use the semantic accessors
+    // below in new code.
     public var googleTitle: String? = nil
     public var googleSubtitle: String? = nil
     public var googleDescription: String? = nil
+
+    public var playStoreTitle: String {
+        get { googleTitle ?? title }
+        set { googleTitle = newValue }
+    }
+
+    public var shortDescription: String {
+        get { googleSubtitle ?? subtitle }
+        set { googleSubtitle = newValue }
+    }
+
+    public var playStoreFullDescription: String {
+        get { googleDescription ?? description }
+        set { googleDescription = newValue }
+    }
 
     public var completion: Double {
         let values = [title, subtitle, promotionalText, description, keywords, releaseNotes]
@@ -252,10 +270,14 @@ public struct ListingLocalization: Identifiable, Codable, Hashable, Sendable {
     }
 
     public func completion(for platforms: Set<StorePlatform>) -> Double {
-        var values = [title, subtitle, description]
+        var values: [String] = []
         if platforms.contains(.appStore) {
-            values += [promotionalText, keywords, releaseNotes]
+            values += [title, subtitle, promotionalText, description, keywords, releaseNotes]
         }
+        if platforms.contains(.playStore) {
+            values += [playStoreTitle, shortDescription, playStoreFullDescription]
+        }
+        guard !values.isEmpty else { return 0 }
         return Double(values.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count) / Double(values.count)
     }
 }
@@ -306,6 +328,7 @@ public func releaseNoteTemplateValidationIssue(name: String, body: String) -> St
 public enum ListingMetadataField: String, CaseIterable, Identifiable, Sendable {
     case title
     case subtitle
+    case shortDescription
     case promotionalText
     case description
     case keywords
@@ -316,7 +339,8 @@ public enum ListingMetadataField: String, CaseIterable, Identifiable, Sendable {
     public var displayName: String {
         switch self {
         case .title: "App name"
-        case .subtitle: "Subtitle / short description"
+        case .subtitle: "Subtitle"
+        case .shortDescription: "Short description"
         case .promotionalText: "Promotional text"
         case .description: "Full description"
         case .keywords: "Keywords"
@@ -327,7 +351,8 @@ public enum ListingMetadataField: String, CaseIterable, Identifiable, Sendable {
     public var promptName: String {
         switch self {
         case .title: "app_name"
-        case .subtitle: "subtitle_or_short_description"
+        case .subtitle: "app_store_subtitle"
+        case .shortDescription: "google_play_short_description"
         case .promotionalText: "promotional_text"
         case .description: "full_description"
         case .keywords: "keywords"
@@ -339,6 +364,7 @@ public enum ListingMetadataField: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .title: localization.title
         case .subtitle: localization.subtitle
+        case .shortDescription: localization.shortDescription
         case .promotionalText: localization.promotionalText
         case .description: localization.description
         case .keywords: localization.keywords
@@ -350,6 +376,7 @@ public enum ListingMetadataField: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .title: localization.title = value
         case .subtitle: localization.subtitle = value
+        case .shortDescription: localization.shortDescription = value
         case .promotionalText: localization.promotionalText = value
         case .description: localization.description = value
         case .keywords: localization.keywords = value
@@ -361,10 +388,22 @@ public enum ListingMetadataField: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .title: limits.title
         case .subtitle: limits.subtitle
+        case .shortDescription: limits.shortDescription
         case .promotionalText: limits.promotionalText
         case .description: limits.description
         case .keywords: limits.keywords
         case .releaseNotes: limits.releaseNotes
+        }
+    }
+
+    public var supportedPlatforms: Set<StorePlatform> {
+        switch self {
+        case .subtitle, .promotionalText, .keywords, .releaseNotes:
+            [.appStore]
+        case .shortDescription:
+            [.playStore]
+        case .title, .description:
+            Set(StorePlatform.allCases)
         }
     }
 }
@@ -670,26 +709,34 @@ public typealias PricingApplyProgressHandler = @MainActor @Sendable (PricingAppl
 
 public struct ListingMetadataLimits: Sendable {
     public let title = 30
-    public let subtitle: Int
+    public let subtitle = 30
+    public let shortDescription = 80
     public let promotionalText = 170
     public let description = 4_000
     public let keywords = 100
     public let releaseNotes = 4_000
 
-    public init(platforms: Set<StorePlatform>) {
-        subtitle = platforms.contains(.appStore) ? 30 : 80
-    }
+    public init(platforms _: Set<StorePlatform>) {}
 
     public func violations(in localization: ListingLocalization, platforms: Set<StorePlatform>) -> [String] {
         var result: [String] = []
-        if localization.title.count > title { result.append("App name exceeds " + String(title) + " characters") }
-        if localization.subtitle.count > subtitle { result.append("Subtitle / short description exceeds " + String(subtitle) + " characters") }
         if platforms.contains(.appStore) {
+            if localization.title.count > title { result.append("App Store app name exceeds " + String(title) + " characters") }
+            if localization.subtitle.count > subtitle { result.append("App Store subtitle exceeds " + String(subtitle) + " characters") }
             if localization.promotionalText.count > promotionalText { result.append("Promotional text exceeds " + String(promotionalText) + " characters") }
             if localization.keywords.count > keywords { result.append("Keywords exceed " + String(keywords) + " characters") }
             if localization.releaseNotes.count > releaseNotes { result.append("What’s new exceeds " + String(releaseNotes) + " characters") }
+            if localization.description.count > description { result.append("App Store description exceeds " + String(description) + " characters") }
         }
-        if localization.description.count > description { result.append("Description exceeds " + String(description) + " characters") }
+        if platforms.contains(.playStore) {
+            if localization.playStoreTitle.count > title { result.append("Google Play app name exceeds " + String(title) + " characters") }
+            if localization.shortDescription.count > shortDescription {
+                result.append("Google Play short description exceeds " + String(shortDescription) + " characters")
+            }
+            if localization.playStoreFullDescription.count > description {
+                result.append("Google Play full description exceeds " + String(description) + " characters")
+            }
+        }
         return result
     }
 }
@@ -976,9 +1023,9 @@ public func listingLocalization(
 ) -> ListingLocalization {
     guard platforms.contains(.playStore), !platforms.contains(.appStore) else { return localization }
     var result = localization
-    result.title = localization.googleTitle ?? localization.title
-    result.subtitle = localization.googleSubtitle ?? localization.subtitle
-    result.description = localization.googleDescription ?? localization.description
+    result.title = localization.playStoreTitle
+    result.subtitle = localization.shortDescription
+    result.description = localization.playStoreFullDescription
     return result
 }
 
@@ -989,13 +1036,16 @@ public func listingMetadataHasChanges(
     comparedTo stored: ListingLocalization,
     displaying platforms: Set<StorePlatform>
 ) -> Bool {
-    let current = listingLocalization(stored, displaying: platforms)
-    return displayed.title != current.title
-        || displayed.subtitle != current.subtitle
-        || displayed.promotionalText != current.promotionalText
-        || displayed.description != current.description
-        || displayed.keywords != current.keywords
-        || displayed.releaseNotes != current.releaseNotes
+    let applied = applyingListingMetadata(from: displayed, to: stored, platforms: platforms)
+    return applied.title != stored.title
+        || applied.subtitle != stored.subtitle
+        || applied.promotionalText != stored.promotionalText
+        || applied.description != stored.description
+        || applied.keywords != stored.keywords
+        || applied.releaseNotes != stored.releaseNotes
+        || applied.googleTitle != stored.googleTitle
+        || applied.googleSubtitle != stored.googleSubtitle
+        || applied.googleDescription != stored.googleDescription
 }
 
 public func applyingListingMetadata(
@@ -1013,9 +1063,20 @@ public func applyingListingMetadata(
         result.releaseNotes = displayed.releaseNotes
     }
     if platforms.contains(.playStore) {
-        result.googleTitle = displayed.title
-        result.googleSubtitle = displayed.subtitle
-        result.googleDescription = displayed.description
+        if platforms == [.playStore] {
+            if displayed.title != stored.playStoreTitle {
+                result.playStoreTitle = displayed.title
+            }
+            if displayed.description != stored.playStoreFullDescription {
+                result.playStoreFullDescription = displayed.description
+            }
+        } else {
+            result.googleTitle = displayed.googleTitle ?? stored.googleTitle
+            result.googleDescription = displayed.googleDescription ?? stored.googleDescription
+        }
+        if displayed.shortDescription != stored.shortDescription {
+            result.shortDescription = displayed.shortDescription
+        }
     }
     return result
 }

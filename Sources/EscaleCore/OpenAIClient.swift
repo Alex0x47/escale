@@ -3,6 +3,7 @@ import Foundation
 public struct OpenAITranslation: Codable, Equatable, Sendable {
     public var title: String
     public var subtitle: String
+    public var shortDescription: String = ""
     public var promotionalText: String
     public var description: String
     public var keywords: String
@@ -12,6 +13,7 @@ public struct OpenAITranslation: Codable, Equatable, Sendable {
 public struct OpenAITranslationLimits: Sendable {
     public let title: Int
     public let subtitle: Int
+    public let shortDescription: Int
     public let promotionalText: Int
     public let description: Int
     public let keywords: Int
@@ -21,7 +23,8 @@ public struct OpenAITranslationLimits: Sendable {
     public static func storeListing(platforms: Set<StorePlatform>) -> Self {
         Self(
             title: 30,
-            subtitle: platforms.contains(.appStore) ? 30 : 80,
+            subtitle: 30,
+            shortDescription: 80,
             promotionalText: 170,
             description: 4_000,
             keywords: 100,
@@ -70,11 +73,12 @@ public struct OpenAIClient: Sendable {
             "target_locale": targetLocale,
             "target_language": targetLanguage,
             "title": source.title,
-            "subtitle": source.subtitle,
-            "promotional_text": source.promotionalText,
+            "subtitle": limits.platforms.contains(.appStore) ? source.subtitle : "",
+            "short_description": limits.platforms.contains(.playStore) ? source.shortDescription : "",
+            "promotional_text": limits.platforms.contains(.appStore) ? source.promotionalText : "",
             "description": source.description,
-            "keywords": source.keywords,
-            "release_notes": source.releaseNotes
+            "keywords": limits.platforms.contains(.appStore) ? source.keywords : "",
+            "release_notes": limits.platforms.contains(.appStore) ? source.releaseNotes : ""
         ]
         let sourceData = try JSONSerialization.data(withJSONObject: sourceObject, options: [.sortedKeys, .withoutEscapingSlashes])
         guard let input = String(data: sourceData, encoding: .utf8) else { throw OpenAIClientError.invalidResponse }
@@ -87,12 +91,13 @@ public struct OpenAIClient: Sendable {
             "properties": [
                 "title": stringProperty,
                 "subtitle": stringProperty,
+                "shortDescription": stringProperty,
                 "promotionalText": stringProperty,
                 "description": stringProperty,
                 "keywords": stringProperty,
                 "releaseNotes": stringProperty
             ],
-            "required": ["title", "subtitle", "promotionalText", "description", "keywords", "releaseNotes"],
+            "required": ["title", "subtitle", "shortDescription", "promotionalText", "description", "keywords", "releaseNotes"],
             "additionalProperties": false
         ]
         let body: [String: Any] = [
@@ -125,7 +130,7 @@ public struct OpenAIClient: Sendable {
             throw OpenAIClientError.api(status: status, message: message)
         }
         var translation = try Self.decodeTranslationResponse(response.data)
-        translation.preserveEmptyFields(from: source)
+        translation.preserveEmptyFields(from: source, platforms: limits.platforms)
         translation.apply(limits: limits)
         return translation
     }
@@ -262,7 +267,43 @@ public struct OpenAIClient: Sendable {
     }
 
     public static func listingTranslationInstructions(limits: OpenAITranslationLimits) -> String {
-        """
+        var constraints = [
+            "title \(limits.title)"
+        ]
+        if limits.platforms.contains(.appStore) {
+            constraints += [
+                "App Store subtitle \(limits.subtitle)",
+                "promotional_text \(limits.promotionalText)",
+                "keywords \(limits.keywords)",
+                "release_notes \(limits.releaseNotes)"
+            ]
+        }
+        if limits.platforms.contains(.playStore) {
+            constraints.append("Google Play short_description \(limits.shortDescription)")
+        }
+        constraints.append("description \(limits.description)")
+        let valuePropositionGuidance: String
+        switch (
+            limits.platforms.contains(.appStore),
+            limits.platforms.contains(.playStore)
+        ) {
+        case (true, true):
+            valuePropositionGuidance = "Make each supplied store field fit its specific role. The App Store subtitle is a concise value proposition. The Google Play short description can expand on the primary benefit and encourage users to view the full listing."
+        case (true, false):
+            valuePropositionGuidance = "Make the App Store subtitle a concise value proposition that complements the title."
+        case (false, true):
+            valuePropositionGuidance = "Make the Google Play short description a compelling summary of the primary benefit that encourages users to view the full listing."
+        case (false, false):
+            valuePropositionGuidance = "Keep the supplied metadata concise and focused on the primary benefit."
+        }
+        let appStoreSpecificGuidance = limits.platforms.contains(.appStore)
+            ? """
+            - For keywords, return a compact comma-separated list with no spaces after commas. Prefer distinct, high-intent localized terms; remove duplicates and close variants, and do not repeat words already present in the title or subtitle when another relevant term is available.
+            - Promotional text and release notes should prioritize clarity and conversion, not keyword repetition.
+            """
+            : ""
+
+        return """
         You are a native \(limits.storeDescription) copywriter and app-store optimization (ASO) strategist. Localize the supplied listing from its source locale into the requested target locale. The result must be faithful, discoverable, persuasive, and ready to publish.
 
         Accuracy and safety:
@@ -274,14 +315,13 @@ public struct OpenAIClient: Sendable {
         Target-locale ASO:
         - Adapt rather than translate mechanically: use natural search vocabulary and category terminology that real users in the target locale would use for the source app's existing features and use cases.
         - Preserve the brand name exactly. Make the title clear and memorable; use a concise high-intent category or use-case phrase only when the source supports it.
-        - Make the subtitle or short description communicate the strongest value proposition and cover useful search intent not already expressed in the title.
+        - \(valuePropositionGuidance)
         - Front-load the description with the app's primary benefit and use case. Weave a small number of relevant localized search phrases into readable, persuasive copy; never keyword-stuff.
-        - For keywords, return a compact comma-separated list with no spaces after commas. Prefer distinct, high-intent localized terms; remove duplicates and close variants, and do not repeat words already present in the title or subtitle when another relevant term is available.
-        - Promotional text and release notes should prioritize clarity and conversion, not keyword repetition.
+        \(appStoreSpecificGuidance)
         - Never use competitor names, unrelated trending terms, trademark misuse, awkward repetition, or unnatural grammar to chase rankings.
 
         Store constraints:
-        - Hard maximum lengths, including spaces and punctuation: title \(limits.title), subtitle \(limits.subtitle), promotional_text \(limits.promotionalText), description \(limits.description), keywords \(limits.keywords), release_notes \(limits.releaseNotes) characters.
+        - Hard maximum lengths, including spaces and punctuation: \(constraints.joined(separator: ", ")) characters.
         - Count characters in the final target-language text. Rephrase naturally until every field fits; do not end a field mid-word or mid-sentence and do not rely on downstream truncation.
         - Return only the requested structured result.
         """
@@ -426,18 +466,23 @@ private struct OpenAIReviewReply: Decodable {
 }
 
 extension OpenAITranslation {
-    public mutating func preserveEmptyFields(from source: ListingLocalization) {
+    public mutating func preserveEmptyFields(
+        from source: ListingLocalization,
+        platforms: Set<StorePlatform> = Set(StorePlatform.allCases)
+    ) {
         if source.title.isEmpty { title = "" }
-        if source.subtitle.isEmpty { subtitle = "" }
-        if source.promotionalText.isEmpty { promotionalText = "" }
+        if !platforms.contains(.appStore) || source.subtitle.isEmpty { subtitle = "" }
+        if !platforms.contains(.playStore) || source.shortDescription.isEmpty { shortDescription = "" }
+        if !platforms.contains(.appStore) || source.promotionalText.isEmpty { promotionalText = "" }
         if source.description.isEmpty { description = "" }
-        if source.keywords.isEmpty { keywords = "" }
-        if source.releaseNotes.isEmpty { releaseNotes = "" }
+        if !platforms.contains(.appStore) || source.keywords.isEmpty { keywords = "" }
+        if !platforms.contains(.appStore) || source.releaseNotes.isEmpty { releaseNotes = "" }
     }
 
     public mutating func apply(limits: OpenAITranslationLimits) {
         title = String(title.prefix(limits.title))
         subtitle = String(subtitle.prefix(limits.subtitle))
+        shortDescription = String(shortDescription.prefix(limits.shortDescription))
         promotionalText = String(promotionalText.prefix(limits.promotionalText))
         description = String(description.prefix(limits.description))
         keywords = String(keywords.prefix(limits.keywords))
@@ -451,9 +496,8 @@ private extension ListingMetadataField {
         case .title:
             return "Preserve the brand exactly and produce a clear, memorable app name. Add a concise high-intent category or use-case phrase only if it is supported by the source."
         case .subtitle:
-            if platforms.contains(.appStore) {
-                return "Write a concise value proposition that complements the title and naturally covers useful search intent not already present there."
-            }
+            return "Write a concise value proposition that complements the title and naturally covers useful search intent not already present there."
+        case .shortDescription:
             return "Write a compelling Google Play short description that states the primary benefit, naturally includes the most relevant localized search phrase, and encourages qualified users to view the listing."
         case .promotionalText:
             return "Write timely, benefit-led conversion copy with a natural call to action when appropriate. This field is not a keyword list, so prioritize readability over repeated search terms."

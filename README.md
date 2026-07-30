@@ -51,7 +51,7 @@ Demo mode is clearly identified and never writes to a remote store.
 **Escale Community** is the application in this repository. It is free,
 open-source under Apache-2.0, and provides a complete manual workflow with no
 trial deadline: one developer account per store, unlimited linked apps, manual
-listing and screenshot management, reviews and replies, single-locale
+listing and screenshot management, customer-review replies, single-locale
 translation, and PPP price calculation and preview.
 
 > [!TIP]
@@ -59,8 +59,8 @@ translation, and PPP price calculation and preview.
 >
 > Pro includes everything in Community, then adds bulk translation across every
 > locale, one-click regional price application, reusable What's New templates,
-> AI-drafted customer-review replies, and Google Play bundle upload with editable
-> draft-release creation.
+> AI-generated customer-review reply drafts, and Google Play bundle upload with
+> editable draft-release creation.
 >
 > Escale Pro is currently **$99/year for one user on up to two Macs** and includes
 > current and future Pro features while the subscription is active.
@@ -68,16 +68,19 @@ translation, and PPP price calculation and preview.
 
 | Capability | Community | Pro |
 | --- | --- | --- |
-| Store listings, screenshots, reviews, and replies | Manual | Manual |
+| Store listing and screenshot management | Manual | Manual |
+| Customer-review replies | Write and publish manually | Manual replies plus AI-generated drafts |
 | Linked applications | Unlimited | Unlimited |
 | Developer accounts | One per store | One per store |
 | App Store version creation | Included | Included |
 | Google Play bundle upload and draft creation | — | Included |
 | AI-assisted translation | One locale at a time | Every app locale |
-| Customer-review replies | Manual | Manual or AI-drafted |
 | What's New templates | — | Included |
 | PPP regional pricing | Calculate and preview | Apply to both stores |
 | Synchronization | Manual | Manual |
+
+AI review-reply drafting requires Escale Pro. Both editions can still write,
+edit, and publish customer-review replies manually.
 
 The Community source and reusable `EscaleCore` and `EscaleUI` libraries remain
 Apache-2.0 licensed. Escale Pro is a separate commercial distribution with

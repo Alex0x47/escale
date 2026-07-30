@@ -277,8 +277,14 @@ public final class WorkspaceStore: ObservableObject {
         pendingEditorPersistence?.cancel()
         pendingEditorPersistence = nil
 
-        try CredentialStore.removeAllEscaleItems()
+        var keychainError: Error?
+        do {
+            try CredentialStore.removeAllEscaleItems()
+        } catch {
+            keychainError = error
+        }
 
+        analytics.setEnabled(false)
         let defaults = UserDefaults.standard
         defaults.dictionaryRepresentation().keys.forEach(defaults.removeObject(forKey:))
         if let bundleIdentifier = Bundle.main.bundleIdentifier {
@@ -289,6 +295,28 @@ public final class WorkspaceStore: ObservableObject {
         URLCache.shared.removeAllCachedResponses()
         HTTPCookieStorage.shared.cookies?.forEach {
             HTTPCookieStorage.shared.deleteCookie($0)
+        }
+
+        workspace = .empty
+        selectedAppID = nil
+        selectedSection = .overview
+        platformFilter = .both
+        isOnboardingPresented = true
+        isDemoMode = false
+        isSyncing = false
+        isOpenAIKeyConfigured = false
+        loadingAppIDs.removeAll()
+        loadedAppIDs.removeAll()
+        appSyncIssues.removeAll()
+        appRefreshProgressByID.removeAll()
+        calculatingProductIDs.removeAll()
+        pricingApplyProgressByProductID.removeAll()
+        savingScreenshotPlatforms.removeAll()
+        deletingScreenshotIDs.removeAll()
+        isAnalyticsEnabled = false
+
+        if let keychainError {
+            throw keychainError
         }
     }
 

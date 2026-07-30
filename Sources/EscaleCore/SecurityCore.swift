@@ -131,15 +131,23 @@ public enum CredentialStore {
     }
 
     public static func removeAllEscaleItems() throws {
-        for item in escaleResetKeychainItems {
-            try KeychainStore.delete(service: item.service, account: item.account)
+        let items = escaleResetKeychainItems.sorted {
+            ($0.service, $0.account) < ($1.service, $1.account)
         }
+        let failures = keychainDeletionFailures(for: items) { item in
+            KeychainStore.deleteStatus(service: item.service, account: item.account)
+        }
+
         cachedApple = nil
         hasLoadedApple = true
         cachedGoogle = nil
         hasLoadedGoogle = true
         cachedOpenAIAPIKey = nil
         hasLoadedOpenAIAPIKey = true
+
+        if !failures.isEmpty {
+            throw EscaleKeychainResetError(failures: failures)
+        }
     }
 
     private static func readMigrating(
@@ -205,13 +213,17 @@ public enum KeychainStore {
     }
 
     public static func delete(service: String, account: String) throws {
+        let status = deleteStatus(service: service, account: account)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw APIError.keychain(status) }
+    }
+
+    static func deleteStatus(service: String, account: String) -> OSStatus {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else { throw APIError.keychain(status) }
+        return SecItemDelete(query as CFDictionary)
     }
 }
 
@@ -231,6 +243,40 @@ let escaleResetKeychainItems: Set<EscaleKeychainItem> = [
     EscaleKeychainItem(service: "app.escale.mac.pro-promotion", account: "installation-id")
 ]
 
+struct EscaleKeychainDeletionFailure: Equatable, Sendable {
+    let item: EscaleKeychainItem
+    let status: OSStatus
+}
+
+func keychainDeletionFailures(
+    for items: [EscaleKeychainItem],
+    deleting: (EscaleKeychainItem) -> OSStatus
+) -> [EscaleKeychainDeletionFailure] {
+    items.compactMap { item in
+        let status = deleting(item)
+        guard status != errSecSuccess, status != errSecItemNotFound else { return nil }
+        return EscaleKeychainDeletionFailure(item: item, status: status)
+    }
+}
+
+struct EscaleKeychainResetError: LocalizedError, Sendable {
+    let failures: [EscaleKeychainDeletionFailure]
+
+    var errorDescription: String? {
+        let noun = failures.count == 1 ? "item" : "items"
+        let statuses = Set(failures.map(\.status)).sorted()
+            .map(String.init)
+            .joined(separator: ", ")
+        let services = Set(failures.map(\.item.service)).sorted()
+            .joined(separator: ", ")
+        return """
+        The workspace and settings were reset, but macOS would not let this build remove \
+        \(failures.count) Keychain \(noun) (error \(statuses)). In Keychain Access, search for \
+        and delete: \(services). Then quit Escale.
+        """
+    }
+}
+
 public enum APIError: LocalizedError, Sendable {
     case missingCredentials(StorePlatform)
     case invalidCredentials(String)
@@ -246,7 +292,12 @@ public enum APIError: LocalizedError, Sendable {
         case .invalidCredentials(let message): "Invalid credentials: \(message)"
         case .invalidResponse: "The store returned an unreadable response."
         case .http(let status, let message): "Store request failed (HTTP \(status)): \(message)"
-        case .keychain(let status): "Keychain operation failed (\(status))."
+        case .keychain(let status):
+            if let message = SecCopyErrorMessageString(status, nil) as String? {
+                "Keychain operation failed (\(status)): \(message)"
+            } else {
+                "Keychain operation failed (\(status))."
+            }
         case .signing(let message): "Could not sign the authorization token: \(message)"
         case .unsupported(let message): message
         }

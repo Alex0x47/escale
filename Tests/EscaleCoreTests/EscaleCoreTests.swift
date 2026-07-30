@@ -83,6 +83,28 @@ func hardResetKeychainScope() {
     ])
 }
 
+@Test("A hard reset attempts every Keychain item and reports only failures")
+func hardResetContinuesAfterKeychainFailure() {
+    let items = [
+        EscaleKeychainItem(service: "app.escale.mac.credentials", account: "app-store-connect"),
+        EscaleKeychainItem(service: "app.gouvernail.mac.credentials", account: "app-store-connect"),
+        EscaleKeychainItem(service: "app.escale.mac.pro-license", account: "active-license")
+    ]
+    var attempted: [EscaleKeychainItem] = []
+
+    let failures = keychainDeletionFailures(for: items) { item in
+        attempted.append(item)
+        return item.service == "app.gouvernail.mac.credentials"
+            ? errSecInvalidOwnerEdit
+            : errSecItemNotFound
+    }
+
+    #expect(attempted == items)
+    #expect(failures == [
+        EscaleKeychainDeletionFailure(item: items[1], status: errSecInvalidOwnerEdit)
+    ])
+}
+
 @Test("Demo workspace links matching store identifiers")
 func linkedStoreIdentifiers() {
     let workspace = SampleData.workspace()

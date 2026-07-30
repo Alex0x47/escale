@@ -747,7 +747,7 @@ public struct SettingsView: View {
                     NSApplication.shared.terminate(nil)
                 } catch {
                     store.showToast(
-                        "Could not reset all data",
+                        "Workspace reset; Keychain cleanup needed",
                         detail: error.localizedDescription,
                         kind: .error
                     )

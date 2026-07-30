@@ -22,6 +22,7 @@ public struct OnboardingView: View {
     @State private var googleKeyName = "Choose service-account JSON"
     @State private var isAddingPackage = false
     @State private var showsGoogleConnectionRequired = false
+    @State private var pairingResult: OnboardingPairingResult?
 
     private let steps = ["Welcome", "Connect", "Pair apps", "Ready"]
 
@@ -98,7 +99,7 @@ public struct OnboardingView: View {
                             Text("Pairing…")
                         }
                     } else {
-                        Text(step == steps.count - 1 ? "Open workspace" : "Continue")
+                        Text(primaryActionTitle)
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -126,6 +127,16 @@ public struct OnboardingView: View {
 
     private var isPairingInProgress: Bool {
         step == 2 && isAddingPackage
+    }
+
+    private var primaryActionTitle: String {
+        if step == steps.count - 1 {
+            return "Open workspace"
+        }
+        if step == 2, pairingResult?.isPaired == true {
+            return "Continue to finish"
+        }
+        return "Continue"
     }
 
     private var welcome: some View {
@@ -279,7 +290,36 @@ public struct OnboardingView: View {
             SectionTitle("Pair the same product", subtitle: "Matching identifiers are linked automatically. You can always override the match.", eyebrow: "Step 3")
                 .frame(maxWidth: 660, alignment: .leading)
             VStack(spacing: 12) {
-                if let firstApp = store.workspace.apps.first {
+                if let pairingResult {
+                    HStack(spacing: 13) {
+                        Image(systemName: pairingResult.isPaired ? "checkmark.circle.fill" : "info.circle.fill")
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(pairingResult.isPaired ? Color.green : Theme.accent)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(pairingResult.isPaired ? "Apps successfully paired!" : "App successfully imported")
+                                .font(.headline)
+                            Text(pairingResult.detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(16)
+                    .background(
+                        (pairingResult.isPaired ? Color.green : Theme.accent).opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke((pairingResult.isPaired ? Color.green : Theme.accent).opacity(0.2))
+                    )
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .accessibilityElement(children: .combine)
+                }
+
+                if let firstApp = (pairingResult?.appID).flatMap({ pairedAppID in
+                    store.workspace.apps.first(where: { $0.id == pairedAppID })
+                }) ?? store.workspace.apps.first {
                     HStack(spacing: 15) {
                         AppMark(app: firstApp, size: 48)
                         VStack(alignment: .leading, spacing: 3) {
@@ -450,6 +490,17 @@ public struct OnboardingView: View {
             do {
                 try await store.addAndroidPackage(packageName)
                 androidPackage = ""
+                if let importedApp = store.workspace.apps.first(where: { $0.playStoreApp?.bundleID == packageName }) {
+                    withAnimation {
+                        pairingResult = OnboardingPairingResult(
+                            appID: importedApp.id,
+                            isPaired: importedApp.linkedCount == 2,
+                            detail: importedApp.linkedCount == 2
+                                ? "\(importedApp.name) now combines its App Store and Google Play records."
+                                : "\(importedApp.name) is ready. No App Store record with the same identifier was found."
+                        )
+                    }
+                }
             } catch {
                 store.showToast("Could not add package", detail: error.localizedDescription, kind: .error)
             }
@@ -1297,6 +1348,12 @@ private struct StoreCredentialSetupGuide: View {
             ]
         }
     }
+}
+
+private struct OnboardingPairingResult {
+    let appID: UUID
+    let isPaired: Bool
+    let detail: String
 }
 
 private struct CredentialSetupStep {

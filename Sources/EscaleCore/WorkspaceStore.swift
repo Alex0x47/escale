@@ -1823,6 +1823,7 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     public func draftReviewReply(to reviewID: UUID) async -> String? {
+        guard requireAccess(to: .draftReviewReplies) else { return nil }
         guard let appID = selectedAppID,
               let app = workspace.apps.first(where: { $0.id == appID }),
               let review = workspace.reviewsByApp[appID]?.first(where: { $0.id == reviewID }) else {

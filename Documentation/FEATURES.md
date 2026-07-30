@@ -22,6 +22,7 @@ The Community edition must remain a complete manual store-management workflow. E
 | Apply reviewed PPP prices to connected stores | `applyRegionalPricing` |
 | Translate fields or release notes across all locales in the selected app | `bulkTranslations` |
 | Save and reuse What’s New templates across apps and locales | `releaseNoteTemplates` |
+| Draft customer-review replies with AI | `draftReviewReplies` |
 | Upload an Android App Bundle and create a Google Play draft release | `uploadGooglePlayBundle` |
 
 `EscaleCommunityApp` always creates its workspace with `CommunityEntitlements`. A private commercial executable supplies its own `EscaleEntitlementProviding` implementation after validating a licence.

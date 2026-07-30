@@ -146,6 +146,7 @@ private struct ReviewDetail: View {
     @State private var response = ""
     @State private var isSending = false
     @State private var isDrafting = false
+    @State private var proFeature: EscaleFeature?
 
     var body: some View {
         ScrollView {
@@ -193,6 +194,9 @@ private struct ReviewDetail: View {
             .padding(28)
             .frame(maxWidth: 820, alignment: .leading)
         }
+        .sheet(item: $proFeature) { feature in
+            ProFeatureSheet(feature: feature)
+        }
     }
 
     private var replyComposer: some View {
@@ -201,6 +205,11 @@ private struct ReviewDetail: View {
                 Text("Write a response").font(.headline)
                 Spacer()
                 Button {
+                    guard store.hasAccess(to: .draftReviewReplies) else {
+                        store.track(.proGateViewed(feature: .draftReviewReplies))
+                        proFeature = .draftReviewReplies
+                        return
+                    }
                     isDrafting = true
                     Task {
                         if let draft = await store.draftReviewReply(to: review.id) {

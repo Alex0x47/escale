@@ -7,6 +7,7 @@ public struct ProFeatureSheet: View {
     @Environment(\.openURL) private var openURL
 
     private let feature: EscaleFeature
+    @State private var isShowingAllFeatures = false
 
     public init(feature: EscaleFeature) {
         self.feature = feature
@@ -50,9 +51,19 @@ public struct ProFeatureSheet: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text("All Pro features")
+                Button {
+                    isShowingAllFeatures = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("All Pro features")
+                            .foregroundStyle(.secondary)
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(Theme.accent)
+                    }
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("View everything included with Escale Pro")
             }
             .padding(16)
             .background(Theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -91,5 +102,119 @@ public struct ProFeatureSheet: View {
         }
         .padding(28)
         .frame(width: 500)
+        .sheet(isPresented: $isShowingAllFeatures) {
+            ProBenefitsSheet()
+        }
+    }
+}
+
+private struct ProBenefit: Identifiable {
+    let feature: EscaleFeature
+    let icon: String
+    let detail: String
+
+    var id: EscaleFeature { feature }
+}
+
+private struct ProBenefitsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    private let benefits = [
+        ProBenefit(
+            feature: .bulkTranslations,
+            icon: "character.book.closed.fill",
+            detail: "Translate fields and release notes across every locale."
+        ),
+        ProBenefit(
+            feature: .draftReviewReplies,
+            icon: "sparkles",
+            detail: "Draft editable responses to customer reviews with AI."
+        ),
+        ProBenefit(
+            feature: .releaseNoteTemplates,
+            icon: "doc.on.doc.fill",
+            detail: "Save and reuse What’s New copy across apps and locales."
+        ),
+        ProBenefit(
+            feature: .applyRegionalPricing,
+            icon: "globe",
+            detail: "Apply reviewed PPP prices directly to both stores."
+        ),
+        ProBenefit(
+            feature: .uploadGooglePlayBundle,
+            icon: "shippingbox.fill",
+            detail: "Upload Android bundles and create editable draft releases."
+        )
+    ]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: "crown.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                    .frame(width: 38, height: 38)
+                    .background(Theme.accent.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Everything in Escale Pro")
+                        .font(.title3.weight(.bold))
+                    Text("Less repetitive work across App Store and Google Play.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
+                .help("Close")
+            }
+
+            VStack(spacing: 0) {
+                ForEach(benefits) { benefit in
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: benefit.icon)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Theme.accent)
+                            .frame(width: 28, height: 28)
+                            .background(Theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(benefit.feature.displayName)
+                                .font(.subheadline.weight(.semibold))
+                            Text(benefit.detail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+                    }
+                    .padding(.vertical, 10)
+
+                    if benefit.id != benefits.last?.id {
+                        Divider()
+                            .padding(.leading, 40)
+                    }
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button("Done") {
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 460)
     }
 }

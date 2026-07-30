@@ -34,7 +34,8 @@ func extensibleProEntitlements() {
             .bulkTranslations,
             .createAppStoreVersion,
             .uploadGooglePlayBundle,
-            .releaseNoteTemplates
+            .releaseNoteTemplates,
+            .draftReviewReplies
         ]
     )
 
@@ -44,6 +45,7 @@ func extensibleProEntitlements() {
     #expect(entitlements.hasAccess(to: .createAppStoreVersion))
     #expect(entitlements.hasAccess(to: .uploadGooglePlayBundle))
     #expect(entitlements.hasAccess(to: .releaseNoteTemplates))
+    #expect(entitlements.hasAccess(to: .draftReviewReplies))
 }
 
 @Test("Community cannot mutate What’s New templates")
@@ -55,6 +57,16 @@ func communityReleaseNoteTemplateGate() {
     #expect(store.createReleaseNoteTemplate(name: "Maintenance", body: "Bug fixes.") == nil)
     #expect(store.workspace.releaseNoteTemplates == originalTemplates)
     #expect(store.toast?.title == "Escale Pro required")
+}
+
+@Test("Community cannot draft customer review replies with AI")
+@MainActor
+func communityReviewReplyDraftGate() async {
+    let store = WorkspaceStore(entitlements: CommunityEntitlements())
+
+    #expect(await store.draftReviewReply(to: UUID()) == nil)
+    #expect(store.toast?.title == "Escale Pro required")
+    #expect(store.toast?.detail == EscaleFeature.draftReviewReplies.upgradeDescription)
 }
 
 @Test("A hard reset targets every Escale-owned Keychain item")

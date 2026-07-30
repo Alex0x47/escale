@@ -115,6 +115,10 @@ public func appleSubscriptionPriceChangeStartDate(now: Date = Date()) -> String 
     return String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
 }
 
+func appleInlinePriceLocalID(_ value: String = UUID().uuidString) -> String {
+    "${\(value)}"
+}
+
 public func appleSubscriptionPriceChangePlan(
     currentPrice: Double,
     resolvedPrice: Double,
@@ -939,7 +943,7 @@ public struct AppStoreConnectClient: Sendable {
         var included: [[String: Any]] = []
         var manualLinkages: [[String: String]] = []
         for selection in selections {
-            let localID = UUID().uuidString
+            let localID = appleInlinePriceLocalID()
             manualLinkages.append(["type": "inAppPurchasePrices", "id": localID])
             included.append([
                 "type": "inAppPurchasePrices",

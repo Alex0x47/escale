@@ -973,6 +973,11 @@ func appStoreSubscriptionTerritoryMapIncludesUS() {
     #expect(map["AF"] == "AFG")
 }
 
+@Test("App Store inline prices use Apple's local ID syntax")
+func appStoreInlinePriceLocalIDFormat() {
+    #expect(appleInlinePriceLocalID("price-1") == "${price-1}")
+}
+
 @Test("US base pricing is enabled by default for both stores")
 func usBasePricingEnabledByDefault() throws {
     #expect(pricingRegionEnabledByDefault("US"))

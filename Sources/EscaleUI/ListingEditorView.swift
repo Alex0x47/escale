@@ -147,11 +147,18 @@ public struct ListingEditorView: View {
 
     private var filteredLocalizations: [ListingLocalization] {
         let query = localizationFilter.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return store.selectedLocalizations }
-        return store.selectedLocalizations.filter {
-            $0.language.localizedStandardContains(query)
-                || $0.locale.localizedStandardContains(query)
+        var localizations = query.isEmpty
+            ? store.selectedLocalizations
+            : store.selectedLocalizations.filter {
+                $0.language.localizedStandardContains(query)
+                    || $0.locale.localizedStandardContains(query)
+            }
+
+        if let primaryID = store.selectedPrimaryLocalization?.id,
+           let primaryIndex = localizations.firstIndex(where: { $0.id == primaryID }) {
+            localizations.insert(localizations.remove(at: primaryIndex), at: 0)
         }
+        return localizations
     }
 
     private var supportedLocales: [(code: String, name: String)] {

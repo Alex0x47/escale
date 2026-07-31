@@ -145,8 +145,6 @@ private struct ReviewDetail: View {
     let review: CustomerReview
     @State private var response = ""
     @State private var isSending = false
-    @State private var isDrafting = false
-    @State private var proFeature: EscaleFeature?
 
     var body: some View {
         ScrollView {
@@ -194,9 +192,6 @@ private struct ReviewDetail: View {
             .padding(28)
             .frame(maxWidth: 820, alignment: .leading)
         }
-        .sheet(item: $proFeature) { feature in
-            ProFeatureSheet(feature: feature)
-        }
     }
 
     private var replyComposer: some View {
@@ -204,23 +199,6 @@ private struct ReviewDetail: View {
             HStack {
                 Text("Write a response").font(.headline)
                 Spacer()
-                Button {
-                    guard store.hasAccess(to: .draftReviewReplies) else {
-                        store.track(.proGateViewed(feature: .draftReviewReplies))
-                        proFeature = .draftReviewReplies
-                        return
-                    }
-                    isDrafting = true
-                    Task {
-                        if let draft = await store.draftReviewReply(to: review.id) {
-                            response = draft
-                        }
-                        isDrafting = false
-                    }
-                } label: {
-                    if isDrafting { ProgressView().controlSize(.small) } else { Label("Draft with AI", systemImage: "sparkles") }
-                }
-                .buttonStyle(.bordered).disabled(isDrafting || isSending)
             }
             TextField("Thank the customer or offer help…", text: $response, axis: .vertical)
                 .textFieldStyle(.plain).lineLimit(5...10)
@@ -240,7 +218,7 @@ private struct ReviewDetail: View {
                 } label: {
                     if isSending { ProgressView().controlSize(.small) } else { Label("Send reply", systemImage: "paperplane.fill") }
                 }
-                .buttonStyle(.borderedProminent).disabled(response.isEmpty || response.count > 350 || isSending || isDrafting)
+                .buttonStyle(.borderedProminent).disabled(response.isEmpty || response.count > 350 || isSending)
             }
         }
         .padding(18)

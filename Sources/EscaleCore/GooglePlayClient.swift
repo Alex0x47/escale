@@ -33,33 +33,14 @@ private struct GoogleJSON: @unchecked Sendable {
     let value: [String: Any]
 }
 
-private struct GoogleConvertedTargets: Sendable {
-    let prices: [String: GoogleConvertedPrice]
-    let regionsVersion: String
-}
-
 public enum GoogleEditCommitDisposition: Sendable, Equatable {
     case heldForManualReview
     case sentForReviewAutomatically
 }
 
-private struct GoogleConvertedPrice: Sendable {
-    let value: Double
-    let currency: String
-}
-
 public struct GooglePriceCalculation: Sendable {
     public let regions: [PriceRegion]
     public let regionsVersion: String
-}
-
-public struct GooglePlayBundleUploadResult: Equatable, Sendable {
-    public let versionCode: Int
-    public let track: String
-    public let releaseName: String
-    public let releaseNotes: [StoreVersionReleaseNote]
-    public let sha1: String?
-    public let sha256: String?
 }
 
 public struct GooglePlayScreenshotUpload: Sendable {
@@ -257,119 +238,6 @@ public struct GooglePlayClient: Sendable {
             additionalHeaders: ["Content-Type": "multipart/related; boundary=\(boundary)"],
             body: body
         )
-    }
-
-    public func createDraftRelease(
-        bundleFileURL: URL,
-        packageName: String,
-        track: String,
-        releaseName: String?,
-        releaseNotes: [StoreVersionReleaseNote],
-        progress: StoreFetchProgressHandler? = nil
-    ) async throws -> GooglePlayBundleUploadResult {
-        let cleanTrack = track.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleanTrack.isEmpty else {
-            throw APIError.invalidCredentials("Choose a Google Play track for the Android release.")
-        }
-
-        await progress?(StoreFetchProgress(completed: 0, total: 4, detail: "Opening a Google Play edit…"))
-        let editID = try await createEdit(packageName: packageName)
-        do {
-            let trackPath = "/applications/\(encoded(packageName))/edits/\(encoded(editID))/tracks/\(encoded(cleanTrack))"
-            let existingTrack = try await request(path: trackPath).value
-            if googleTrackContainsDraftRelease(existingTrack) {
-                throw APIError.unsupported(
-                    "The \(cleanTrack) track already has a draft release. Finish or remove it in Google Play Console before uploading another bundle."
-                )
-            }
-
-            await progress?(StoreFetchProgress(completed: 1, total: 4, detail: "Uploading the signed Android App Bundle…"))
-            let bundlePath = "/applications/\(encoded(packageName))/edits/\(encoded(editID))/bundles"
-            let uploadedBundle = try await uploadFile(
-                url: uploadBaseURL.appending(path: bundlePath).appendingQueryItems([
-                    URLQueryItem(name: "uploadType", value: "media")
-                ]),
-                fileURL: bundleFileURL,
-                contentType: "application/octet-stream"
-            ).value
-            guard let versionCode = uploadedBundle.int("versionCode") else {
-                throw APIError.invalidResponse
-            }
-
-            await progress?(StoreFetchProgress(completed: 2, total: 4, detail: "Creating a draft release on \(cleanTrack)…"))
-            let payload = googleDraftReleasePayload(
-                track: cleanTrack,
-                versionCode: versionCode,
-                releaseName: releaseName,
-                releaseNotes: releaseNotes
-            )
-            let updatedTrack = try await request(
-                path: trackPath,
-                method: "PUT",
-                body: HTTPTransport.jsonBody(payload)
-            ).value
-
-            await progress?(StoreFetchProgress(completed: 3, total: 4, detail: "Saving the draft without submitting it for review…"))
-            _ = try await request(
-                path: "/applications/\(encoded(packageName))/edits/\(encoded(editID)):commit",
-                query: googleDraftCommitQueryItems(),
-                method: "POST"
-            )
-
-            let returnedRelease = updatedTrack.array("releases").first
-            let cleanReleaseName = releaseName?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let resolvedReleaseName = returnedRelease?.string("name")
-                ?? (cleanReleaseName?.isEmpty == false ? cleanReleaseName! : "Build \(versionCode)")
-            await progress?(StoreFetchProgress(completed: 4, total: 4, detail: "Android draft \(versionCode) is ready in Google Play Console."))
-            return GooglePlayBundleUploadResult(
-                versionCode: versionCode,
-                track: cleanTrack,
-                releaseName: resolvedReleaseName,
-                releaseNotes: releaseNotes,
-                sha1: uploadedBundle.string("sha1"),
-                sha256: uploadedBundle.string("sha256")
-            )
-        } catch {
-            try? await deleteEdit(packageName: packageName, editID: editID)
-            throw error
-        }
-    }
-
-    public func applyRegionalPrices(
-        product: StoreProduct,
-        packageName: String,
-        progress: PricingApplyProgressHandler? = nil
-    ) async throws {
-        guard let productID = product.googleProductID ?? (product.platforms.contains(.playStore) ? product.productID : nil) else {
-            throw APIError.unsupported("This product is not linked to a Google Play product.")
-        }
-        guard !regionsRequiringPriceChange(product.regions).isEmpty else {
-            await progress?(PricingApplyProgress(
-                platform: .playStore, completed: 1, total: 1,
-                detail: "No Google Play region needs a price change."
-            ))
-            return
-        }
-        await progress?(PricingApplyProgress(
-            platform: .playStore, completed: 0, total: 3,
-            detail: "Validating Google Play regions and currencies…"
-        ))
-        let conversion = try await convertedPPPTargets(product: product, packageName: packageName)
-        await progress?(PricingApplyProgress(
-            platform: .playStore, completed: 1, total: 3,
-            detail: "Updating the Google Play product catalog…"
-        ))
-        if product.kind.localizedCaseInsensitiveContains("subscription"), let basePlanID = product.googleBasePlanID {
-            try await updateSubscriptionPrices(product: product, conversion: conversion, packageName: packageName, productID: productID, basePlanID: basePlanID)
-        } else if product.kind == "One-time product", let purchaseOptionID = product.googleBasePlanID {
-            try await updateOneTimeProductPrices(conversion: conversion, packageName: packageName, productID: productID, purchaseOptionID: purchaseOptionID)
-        } else {
-            try await updateInAppProductPrices(product: product, targets: conversion.prices, packageName: packageName, productID: productID)
-        }
-        await progress?(PricingApplyProgress(
-            platform: .playStore, completed: 3, total: 3,
-            detail: "Google Play accepted the regional catalog."
-        ))
     }
 
     public func calculateRegionalPrices(product: StoreProduct, factors: [String: Double], packageName: String) async throws -> GooglePriceCalculation {
@@ -728,17 +596,6 @@ public struct GooglePlayClient: Sendable {
         return products
     }
 
-    private func convertedPPPTargets(product: StoreProduct, packageName: String) async throws -> GoogleConvertedTargets {
-        let response = try await convertRegionPrices(basePrice: product.basePrice, packageName: packageName)
-        var targets: [String: GoogleConvertedPrice] = [:]
-        let availableCodes = Set(response.converted.keys)
-        for region in googleRegionsRequiringPriceChange(product.regions, convertedRegionCodes: availableCodes) {
-            targets[region.code] = GoogleConvertedPrice(value: region.suggestedPrice, currency: region.currency)
-        }
-        guard !targets.isEmpty else { throw APIError.unsupported("Google Play did not return converted prices for the selected regions.") }
-        return GoogleConvertedTargets(prices: targets, regionsVersion: response.version)
-    }
-
     private func convertRegionPrices(basePrice: Double, packageName: String) async throws -> (converted: [String: Any], version: String) {
         guard basePrice > 0 else {
             throw APIError.unsupported("PPP pricing requires this Google Play product to be available with a United States base price.")
@@ -750,117 +607,6 @@ public struct GooglePlayClient: Sendable {
         ).value
         guard let version = response.dictionary("regionVersion").string("version") else { throw APIError.invalidResponse }
         return (response.dictionary("convertedRegionPrices"), version)
-    }
-
-    private func updateInAppProductPrices(product: StoreProduct, targets: [String: GoogleConvertedPrice], packageName: String, productID: String) async throws {
-        let response = try await request(path: "/applications/\(encoded(packageName))/inappproducts/\(encoded(productID))").value
-        var object = response
-        var prices = object.dictionary("prices")
-        for (regionCode, target) in targets {
-            prices[regionCode] = googleLegacyPriceObject(value: target.value, currency: target.currency)
-        }
-        object["prices"] = prices
-        _ = try await request(
-            path: "/applications/\(encoded(packageName))/inappproducts/\(encoded(productID))",
-            query: [URLQueryItem(name: "autoConvertMissingPrices", value: "true")],
-            method: "PUT",
-            body: HTTPTransport.jsonBody(object)
-        )
-    }
-
-    private func updateSubscriptionPrices(product: StoreProduct, conversion: GoogleConvertedTargets, packageName: String, productID: String, basePlanID: String) async throws {
-        let response = try await request(path: "/applications/\(encoded(packageName))/subscriptions/\(encoded(productID))").value
-        var subscription = response
-        var basePlans = subscription.array("basePlans")
-        guard let index = basePlans.firstIndex(where: { $0.string("basePlanId") == basePlanID }) else {
-            throw APIError.unsupported("The Google Play base plan \(basePlanID) was not found.")
-        }
-        var configs = basePlans[index].array("regionalConfigs")
-        for (regionCode, target) in conversion.prices {
-            if let configIndex = configs.firstIndex(where: { $0.string("regionCode") == regionCode }) {
-                configs[configIndex]["price"] = moneyObject(value: target.value, currency: target.currency)
-            } else {
-                configs.append(["regionCode": regionCode, "price": moneyObject(value: target.value, currency: target.currency), "newSubscriberAvailability": true])
-            }
-        }
-        basePlans[index]["regionalConfigs"] = configs
-        let mutableBasePlans = basePlans.map { basePlan -> [String: Any] in
-            var result = basePlan
-            result.removeValue(forKey: "state")
-            return result
-        }
-        subscription = [
-            "packageName": packageName,
-            "productId": productID,
-            "basePlans": mutableBasePlans
-        ]
-        let batchBody: [String: Any] = [
-            "requests": [[
-                "subscription": subscription,
-                "updateMask": "basePlans",
-                "regionsVersion": ["version": conversion.regionsVersion]
-            ]]
-        ]
-        _ = try await request(path: "/applications/\(encoded(packageName))/subscriptions:batchUpdate", method: "POST", body: HTTPTransport.jsonBody(batchBody))
-        if product.effectiveSubscriberPricePolicy == .migrate {
-            let legacyCohortCutoff = ISO8601DateFormatter().string(from: Date())
-            let regionsByCode = Dictionary(uniqueKeysWithValues: product.regions.map { ($0.code, $0) })
-            let migrations: [[String: Any]] = conversion.prices.keys.sorted().map { code in
-                var migration: [String: Any] = [
-                    "regionCode": code,
-                    "oldestAllowedPriceVersionTime": legacyCohortCutoff
-                ]
-                if let region = regionsByCode[code], region.suggestedPrice > region.currentPrice {
-                    migration["priceIncreaseType"] = "PRICE_INCREASE_TYPE_OPT_IN"
-                }
-                return migration
-            }
-            let body: [String: Any] = [
-                "regionalPriceMigrations": migrations,
-                "regionsVersion": ["version": conversion.regionsVersion]
-            ]
-            _ = try await request(
-                path: "/applications/\(encoded(packageName))/subscriptions/\(encoded(productID))/basePlans/\(encoded(basePlanID)):migratePrices",
-                method: "POST",
-                body: HTTPTransport.jsonBody(body)
-            )
-        }
-    }
-
-    private func updateOneTimeProductPrices(conversion: GoogleConvertedTargets, packageName: String, productID: String, purchaseOptionID: String) async throws {
-        let response = try await request(path: "/applications/\(encoded(packageName))/oneTimeProducts/\(encoded(productID))").value
-        var product = response
-        var options = product.array("purchaseOptions")
-        guard let optionIndex = options.firstIndex(where: { $0.string("purchaseOptionId") == purchaseOptionID }) else {
-            throw APIError.unsupported("The Google Play purchase option \(purchaseOptionID) was not found.")
-        }
-        var configs = options[optionIndex].array("regionalPricingAndAvailabilityConfigs")
-        for (regionCode, target) in conversion.prices {
-            if let index = configs.firstIndex(where: { $0.string("regionCode") == regionCode }) {
-                configs[index]["price"] = moneyObject(value: target.value, currency: target.currency)
-            } else {
-                configs.append(["regionCode": regionCode, "price": moneyObject(value: target.value, currency: target.currency), "availability": "AVAILABLE"])
-            }
-        }
-        options[optionIndex]["regionalPricingAndAvailabilityConfigs"] = configs
-        let mutableOptions = options.map { option -> [String: Any] in
-            var result = option
-            result.removeValue(forKey: "state")
-            return result
-        }
-        product = [
-            "packageName": packageName,
-            "productId": productID,
-            "purchaseOptions": mutableOptions
-        ]
-        let body: [String: Any] = [
-            "requests": [[
-                "oneTimeProduct": product,
-                "updateMask": "purchaseOptions",
-                "regionsVersion": ["version": conversion.regionsVersion]
-            ]]
-        ]
-        _ = try await request(path: "/applications/\(encoded(packageName))/oneTimeProducts:batchUpdate", method: "POST", body: HTTPTransport.jsonBody(body))
     }
 
     private func request(path: String, query: [URLQueryItem] = [], method: String = "GET", body: Data? = nil) async throws -> GoogleJSON {
@@ -875,24 +621,6 @@ public struct GooglePlayClient: Sendable {
         let response = try await HTTPTransport.send(url: url, method: method, headers: headers, body: body)
         if response.data.isEmpty { return GoogleJSON(value: [:]) }
         guard let object = try JSONSerialization.jsonObject(with: response.data) as? [String: Any] else { throw APIError.invalidResponse }
-        return GoogleJSON(value: object)
-    }
-
-    private func uploadFile(url: URL, fileURL: URL, contentType: String) async throws -> GoogleJSON {
-        let token = try await GoogleTokenCache.shared.token(for: credentials)
-        let response = try await HTTPTransport.upload(
-            url: url,
-            headers: [
-                "Authorization": "Bearer \(token)",
-                "Accept": "application/json",
-                "Content-Type": contentType
-            ],
-            fileURL: fileURL,
-            timeout: 120
-        )
-        guard let object = try JSONSerialization.jsonObject(with: response.data) as? [String: Any] else {
-            throw APIError.invalidResponse
-        }
         return GoogleJSON(value: object)
     }
 
@@ -974,32 +702,6 @@ public func googleRequiresAutomaticReviewSubmission(_ error: Error) -> Bool {
         && normalized.contains("must not be set")
 }
 
-public func googleDraftReleasePayload(
-    track: String,
-    versionCode: Int,
-    releaseName: String?,
-    releaseNotes: [StoreVersionReleaseNote]
-) -> [String: Any] {
-    var release: [String: Any] = [
-        "versionCodes": [String(versionCode)],
-        "status": "draft"
-    ]
-    if let cleanName = releaseName?.trimmingCharacters(in: .whitespacesAndNewlines),
-       !cleanName.isEmpty {
-        release["name"] = cleanName
-    }
-    if !releaseNotes.isEmpty {
-        release["releaseNotes"] = releaseNotes.map {
-            ["language": $0.language, "text": $0.text]
-        }
-    }
-    return ["track": track, "releases": [release]]
-}
-
-private func googleTrackContainsDraftRelease(_ track: [String: Any]) -> Bool {
-    track.array("releases").contains { $0.string("status") == "draft" }
-}
-
 private extension Dictionary where Key == String, Value == Any {
     func string(_ key: String) -> String? {
         if let value = self[key] as? String { return value }
@@ -1024,13 +726,6 @@ private func moneyValue(_ object: [String: Any]) -> Double {
 public func googleLegacyPriceValue(_ object: [String: Any]) -> Double {
     let micros = object.string("priceMicros").flatMap(Double.init) ?? 0
     return micros / 1_000_000
-}
-
-public func googleLegacyPriceObject(value: Double, currency: String) -> [String: Any] {
-    [
-        "priceMicros": String(Int64((value * 1_000_000).rounded())),
-        "currency": currency
-    ]
 }
 
 public func googleLegacyCatalogRequiresMigration(_ error: Error) -> Bool {
@@ -1062,15 +757,6 @@ public func googlePriceRegionsIncludingUSBase(
         ))
     }
     return result
-}
-
-public func googleRegionsRequiringPriceChange(
-    _ regions: [PriceRegion],
-    convertedRegionCodes: Set<String>
-) -> [PriceRegion] {
-    regionsRequiringPriceChange(regions).filter {
-        $0.code == "US" || convertedRegionCodes.contains($0.code)
-    }
 }
 
 private func moneyObject(value: Double, currency: String) -> [String: Any] {

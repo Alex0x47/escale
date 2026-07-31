@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Product feedback and roadmap
+    url: https://litefeedback.com/roadmap/Escale
+    about: Suggest features or discuss product direction.
+  - name: Security report
+    url: mailto:pro@alexandre-grisey.fr
+    about: Report vulnerabilities and credential exposure privately.

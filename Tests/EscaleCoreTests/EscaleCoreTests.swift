@@ -4,72 +4,7 @@ import Foundation
 import Security
 @testable import EscaleCore
 
-private struct TestProEntitlements: EscaleEntitlementProviding {
-    let plan = EscalePlan.pro
-    let enabledFeatures: Set<EscaleFeature>
-
-    func hasAccess(to feature: EscaleFeature) -> Bool {
-        enabledFeatures.contains(feature)
-    }
-}
-
-@Test("Community entitlements include iOS version creation but keep Pro capabilities locked")
-func communityEntitlements() {
-    let entitlements = CommunityEntitlements()
-
-    #expect(entitlements.plan == .community)
-    #expect(entitlements.hasAccess(to: .createAppStoreVersion))
-    #expect(
-        EscaleFeature.allCases
-            .filter { $0 != .createAppStoreVersion }
-            .allSatisfy { !entitlements.hasAccess(to: $0) }
-    )
-}
-
-@Test("A private entitlement provider can unlock selected Pro capabilities")
-func extensibleProEntitlements() {
-    let entitlements = TestProEntitlements(
-        enabledFeatures: [
-            .applyRegionalPricing,
-            .bulkTranslations,
-            .createAppStoreVersion,
-            .uploadGooglePlayBundle,
-            .releaseNoteTemplates,
-            .draftReviewReplies
-        ]
-    )
-
-    #expect(entitlements.plan == .pro)
-    #expect(entitlements.hasAccess(to: .applyRegionalPricing))
-    #expect(entitlements.hasAccess(to: .bulkTranslations))
-    #expect(entitlements.hasAccess(to: .createAppStoreVersion))
-    #expect(entitlements.hasAccess(to: .uploadGooglePlayBundle))
-    #expect(entitlements.hasAccess(to: .releaseNoteTemplates))
-    #expect(entitlements.hasAccess(to: .draftReviewReplies))
-}
-
-@Test("Community cannot mutate What’s New templates")
-@MainActor
-func communityReleaseNoteTemplateGate() {
-    let store = WorkspaceStore(entitlements: CommunityEntitlements())
-    let originalTemplates = store.workspace.releaseNoteTemplates
-
-    #expect(store.createReleaseNoteTemplate(name: "Maintenance", body: "Bug fixes.") == nil)
-    #expect(store.workspace.releaseNoteTemplates == originalTemplates)
-    #expect(store.toast?.title == "Escale Pro required")
-}
-
-@Test("Community cannot draft customer review replies with AI")
-@MainActor
-func communityReviewReplyDraftGate() async {
-    let store = WorkspaceStore(entitlements: CommunityEntitlements())
-
-    #expect(await store.draftReviewReply(to: UUID()) == nil)
-    #expect(store.toast?.title == "Escale Pro required")
-    #expect(store.toast?.detail == EscaleFeature.draftReviewReplies.upgradeDescription)
-}
-
-@Test("A hard reset targets every Escale-owned Keychain item")
+ @Test("A hard reset targets every Escale-owned Keychain item")
 func hardResetKeychainScope() {
     #expect(escaleResetKeychainItems == [
         EscaleKeychainItem(service: "app.escale.mac.credentials", account: "app-store-connect"),
@@ -77,9 +12,7 @@ func hardResetKeychainScope() {
         EscaleKeychainItem(service: "app.escale.mac.credentials", account: "openai-api-key"),
         EscaleKeychainItem(service: "app.gouvernail.mac.credentials", account: "app-store-connect"),
         EscaleKeychainItem(service: "app.gouvernail.mac.credentials", account: "google-play-service-account"),
-        EscaleKeychainItem(service: "app.gouvernail.mac.credentials", account: "openai-api-key"),
-        EscaleKeychainItem(service: "app.escale.mac.pro-license", account: "active-license"),
-        EscaleKeychainItem(service: "app.escale.mac.pro-promotion", account: "installation-id")
+        EscaleKeychainItem(service: "app.gouvernail.mac.credentials", account: "openai-api-key")
     ])
 }
 
@@ -88,7 +21,7 @@ func hardResetContinuesAfterKeychainFailure() {
     let items = [
         EscaleKeychainItem(service: "app.escale.mac.credentials", account: "app-store-connect"),
         EscaleKeychainItem(service: "app.gouvernail.mac.credentials", account: "app-store-connect"),
-        EscaleKeychainItem(service: "app.escale.mac.pro-license", account: "active-license")
+        EscaleKeychainItem(service: "app.escale.mac.credentials", account: "openai-api-key")
     ]
     var attempted: [EscaleKeychainItem] = []
 
@@ -307,54 +240,7 @@ func listingMetadataFieldAccess() {
     #expect(ListingMetadataField.shortDescription.value(in: localization) == "A fuller Play value proposition.")
 }
 
-@Test("What’s New templates validate reusable names and copy")
-func releaseNoteTemplateValidation() {
-    #expect(releaseNoteTemplateValidationIssue(name: "", body: "Bug fixes.") == "Give the template a name.")
-    #expect(releaseNoteTemplateValidationIssue(name: "Maintenance", body: "  ") == "Add the release notes you want to reuse.")
-    #expect(releaseNoteTemplateValidationIssue(name: "Maintenance", body: "Bug fixes and improvements.") == nil)
-    #expect(
-        releaseNoteTemplateValidationIssue(
-            name: String(repeating: "a", count: releaseNoteTemplateNameCharacterLimit + 1),
-            body: "Bug fixes."
-        ) != nil
-    )
-    #expect(
-        releaseNoteTemplateValidationIssue(
-            name: "Long update",
-            body: String(repeating: "a", count: releaseNoteTemplateBodyCharacterLimit + 1)
-        ) != nil
-    )
-}
-
-@Test("What’s New templates persist with the workspace while legacy workspaces remain decodable")
-func releaseNoteTemplatePersistence() throws {
-    let template = ReleaseNoteTemplate(
-        id: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
-        name: "Maintenance update",
-        body: "Bug fixes and performance improvements.",
-        createdAt: Date(timeIntervalSince1970: 100),
-        updatedAt: Date(timeIntervalSince1970: 200)
-    )
-    var workspace = Workspace.empty
-    workspace.releaseNoteTemplates = [template]
-
-    let decoded = try JSONDecoder().decode(
-        Workspace.self,
-        from: JSONEncoder().encode(workspace)
-    )
-    #expect(decoded.releaseNoteTemplates == [template])
-
-    let emptyWorkspaceData = try JSONEncoder().encode(Workspace.empty)
-    var legacyObject = try #require(
-        JSONSerialization.jsonObject(with: emptyWorkspaceData) as? [String: Any]
-    )
-    legacyObject.removeValue(forKey: "releaseNoteTemplates")
-    let legacyData = try JSONSerialization.data(withJSONObject: legacyObject)
-    let legacyWorkspace = try JSONDecoder().decode(Workspace.self, from: legacyData)
-    #expect(legacyWorkspace.releaseNoteTemplates == nil)
-}
-
-@Test("Screenshot reordering changes only the selected remote gallery")
+ @Test("Screenshot reordering changes only the selected remote gallery")
 func screenshotGalleryReordering() throws {
     let firstID = UUID(uuidString: "10000000-0000-0000-0000-000000000001")!
     let secondID = UUID(uuidString: "10000000-0000-0000-0000-000000000002")!
@@ -682,31 +568,7 @@ func googleDraftCommitSafety() {
     #expect(query["changesInReviewBehavior"] == "ERROR_IF_IN_REVIEW")
 }
 
-@Test("Android bundle uploads create an editable draft release payload")
-func googleBundleDraftReleasePayload() throws {
-    let payload = googleDraftReleasePayload(
-        track: "production",
-        versionCode: 240,
-        releaseName: "  2.4.0  ",
-        releaseNotes: [
-            StoreVersionReleaseNote(language: "en-US", text: "Faster sync."),
-            StoreVersionReleaseNote(language: "fr-FR", text: "Synchronisation accélérée.")
-        ]
-    )
-    #expect(payload["track"] as? String == "production")
-    let releases = try #require(payload["releases"] as? [[String: Any]])
-    let release = try #require(releases.first)
-    #expect(release["name"] as? String == "2.4.0")
-    #expect(release["status"] as? String == "draft")
-    #expect(release["versionCodes"] as? [String] == ["240"])
-    let notes = try #require(release["releaseNotes"] as? [[String: String]])
-    #expect(notes == [
-        ["language": "en-US", "text": "Faster sync."],
-        ["language": "fr-FR", "text": "Synchronisation accélérée."]
-    ])
-}
-
-@Test("Google automatic-review fallback omits only the unsupported hold flag")
+ @Test("Google automatic-review fallback omits only the unsupported hold flag")
 func googleAutomaticReviewCommitFallback() {
     let query = Dictionary(uniqueKeysWithValues: googleAutomaticReviewCommitQueryItems().map { ($0.name, $0.value) })
     #expect(query["changesNotSentForReview"] == nil)
@@ -768,16 +630,7 @@ func googlePlayReleaseNoteLimits() {
     #expect(!googlePlayReleaseNotesValidationIssues("not tagged").isEmpty)
 }
 
-@Test("Legacy Google Play prices use micros rather than Money")
-func googleLegacyPriceEncoding() {
-    let encoded = googleLegacyPriceObject(value: 4.99, currency: "USD")
-    #expect(encoded["priceMicros"] as? String == "4990000")
-    #expect(encoded["currency"] as? String == "USD")
-    #expect(googleLegacyPriceValue(encoded) == 4.99)
-    #expect(encoded["units"] == nil)
-}
-
-@Test("A migrated Google catalog ignores the expected legacy endpoint rejection")
+ @Test("A migrated Google catalog ignores the expected legacy endpoint rejection")
 func googleLegacyCatalogMigrationResponse() {
     #expect(googleLegacyCatalogRequiresMigration(APIError.http(
         status: 403,
@@ -793,18 +646,7 @@ func googleLegacyCatalogMigrationResponse() {
     )))
 }
 
-@Test("Subscriptions preserve existing prices by default")
-func subscriberPricingDefault() {
-    let product = StoreProduct(
-        id: UUID(), name: "Monthly", productID: "monthly", kind: "Auto-renewable subscription", basePrice: 9.99,
-        platforms: [.appStore, .playStore], regions: [], appleProductID: "apple", googleProductID: "google", googleBasePlanID: "monthly"
-    )
-    #expect(product.isSubscription)
-    #expect(product.effectiveSubscriberPricePolicy == .preserve)
-    #expect(product.effectivePricingIndex == .worldwidePPP)
-}
-
-@Test("Google base plans remain distinct during refresh")
+ @Test("Google base plans remain distinct during refresh")
 func googleBasePlanIdentity() {
     let appleOnly = StoreProduct(
         id: UUID(), name: "Monthly", productID: "pro", kind: "Auto-renewable subscription",
@@ -832,7 +674,7 @@ func crossStoreProductsAreSplit() throws {
         id: UUID(), name: "Pro", productID: "pro", kind: "Subscription",
         basePrice: 9.99, platforms: [.appStore, .playStore], regions: [],
         appleProductID: "apple-pro", googleProductID: "google-pro", googleBasePlanID: "monthly",
-        pricingIndex: .bigMac, subscriberPricePolicy: .preserve, pricingCalculatedAt: Date(),
+        pricingIndex: .bigMac, pricingCalculatedAt: Date(),
         pricingSourceSummary: "Combined stale pricing"
     )
     let split = splitCrossStoreProducts([combined])
@@ -862,7 +704,6 @@ func appStoreRefreshReplacesTerritoryPrices() throws {
         basePrice: 4.99, platforms: [.appStore], regions: [staleAfghanistan], appleProductID: "apple-old"
     )
     cached.pricingIndex = .bigMac
-    cached.subscriberPricePolicy = .preserve
     cached.pricingCalculatedAt = Date()
     cached.pricingSourceSummary = "Stale calculation"
 
@@ -877,7 +718,6 @@ func appStoreRefreshReplacesTerritoryPrices() throws {
     #expect(try #require(refreshed.regions.first(where: { $0.code == "AF" })).currentPrice == 3.99)
     #expect(refreshed.appleProductID == "apple-live")
     #expect(refreshed.pricingIndex == .bigMac)
-    #expect(refreshed.subscriberPricePolicy == .preserve)
     #expect(refreshed.pricingCalculatedAt == nil)
     #expect(refreshed.pricingSourceSummary == nil)
 }
@@ -953,51 +793,7 @@ func activeSubscriptionPrice() throws {
     #expect(effectiveSubscriptionPriceCandidate([entries[0]], on: now)?.pricePointID == "original")
 }
 
-@Test("Approved App Store subscriptions receive scheduled price changes")
-func approvedSubscriptionPriceChangePlan() throws {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
-    let now = try #require(calendar.date(from: DateComponents(
-        year: 2026, month: 7, day: 22, hour: 23, minute: 30
-    )))
-    let startDate = appleSubscriptionPriceChangeStartDate(now: now)
-
-    #expect(startDate == "2026-07-24")
-    #expect(appleSubscriptionPriceChangePlan(
-        currentPrice: 4.99, resolvedPrice: 4.99, policy: .preserve, startDate: startDate
-    ) == nil)
-    #expect(appleSubscriptionPriceChangePlan(
-        currentPrice: 3.99, resolvedPrice: 4.99, policy: .preserve, startDate: startDate
-    ) == AppleSubscriptionPriceChangePlan(startDate: "2026-07-24", preserveCurrentPrice: true))
-    #expect(appleSubscriptionPriceChangePlan(
-        currentPrice: 3.99, resolvedPrice: 4.99, policy: .migrate, startDate: startDate
-    ) == AppleSubscriptionPriceChangePlan(startDate: "2026-07-24", preserveCurrentPrice: false))
-    #expect(appleSubscriptionPriceChangePlan(
-        currentPrice: 4.99, resolvedPrice: 3.99, policy: .preserve, startDate: startDate
-    ) == AppleSubscriptionPriceChangePlan(startDate: "2026-07-24", preserveCurrentPrice: false))
-}
-
-@Test("Pricing apply skips unchanged and disabled markets")
-func pricingApplyFiltersNoOpMarkets() {
-    let regions = [
-        PriceRegion(
-            code: "AF", country: "Afghanistan", flag: "🇦🇫", currency: "USD",
-            pppIndex: 1, currentPrice: 3.99, suggestedPrice: 3.99, enabled: true
-        ),
-        PriceRegion(
-            code: "AL", country: "Albania", flag: "🇦🇱", currency: "USD",
-            pppIndex: 0.8, currentPrice: 4.99, suggestedPrice: 3.99, enabled: true
-        ),
-        PriceRegion(
-            code: "DZ", country: "Algeria", flag: "🇩🇿", currency: "USD",
-            pppIndex: 0.8, currentPrice: 4.99, suggestedPrice: 3.99, enabled: false
-        )
-    ]
-    #expect(regionsRequiringPriceChange(regions).map(\.code) == ["AL"])
-    #expect(PricingApplyProgress(platform: .appStore, completed: 2, total: 4, detail: "").fraction == 0.5)
-}
-
-@Test("App Store pricing includes the US base market and proposed price")
+ @Test("App Store pricing includes the US base market and proposed price")
 func appStorePricingIncludesUSBaseMarket() throws {
     let existingUS = PriceRegion(
         code: "US", country: "United States", flag: "🇺🇸", currency: "USD",
@@ -1023,22 +819,7 @@ func appStorePricingIncludesUSBaseMarket() throws {
     #expect(regions.filter { $0.code == "US" }.count == 1)
 }
 
-@Test("App Store subscription scheduling maps the US base market")
-func appStoreSubscriptionTerritoryMapIncludesUS() {
-    let map = appleTerritoryIdentifiers(
-        equalizations: [(territory: "AFG", price: 2.49, currency: "USD")],
-        includesUSBase: true
-    )
-    #expect(map["US"] == "USA")
-    #expect(map["AF"] == "AFG")
-}
-
-@Test("App Store inline prices use Apple's local ID syntax")
-func appStoreInlinePriceLocalIDFormat() {
-    #expect(appleInlinePriceLocalID("price-1") == "${price-1}")
-}
-
-@Test("US base pricing is enabled by default for both stores")
+ @Test("US base pricing is enabled by default for both stores")
 func usBasePricingEnabledByDefault() throws {
     #expect(pricingRegionEnabledByDefault("US"))
     let fallbackUS = try #require(defaultPriceRegions(basePrice: 1.99).first(where: { $0.code == "US" }))
@@ -1059,19 +840,7 @@ func usBasePricingEnabledByDefault() throws {
     #expect(googleUS.enabled)
 }
 
-@Test("Google applies a changed US base even when conversion data omits it")
-func googleBasePriceChangeDoesNotDependOnConversionRow() {
-    let unitedStates = PriceRegion(
-        code: "US", country: "United States", flag: "🇺🇸", currency: "USD",
-        pppIndex: 1, currentPrice: 1.99, suggestedPrice: 2.99, enabled: true
-    )
-    #expect(
-        googleRegionsRequiringPriceChange([unitedStates], convertedRegionCodes: []).map(\.code)
-            == ["US"]
-    )
-}
-
-@Test("Base-price drafts accept decimal separators and reject invalid prices")
+ @Test("Base-price drafts accept decimal separators and reject invalid prices")
 func basePriceDraftParsing() {
     #expect(storePriceValue(from: "2.99") == 2.99)
     #expect(storePriceValue(from: "2,99") == 2.99)
@@ -1157,78 +926,7 @@ func openAIFieldTranslationResponse() throws {
     #expect(decoded == "Nouveau cette semaine.")
 }
 
-@Test("Review replies use the selected store app name")
-func reviewReplyUsesSelectedAppName() {
-    let app = UnifiedApp(
-        id: UUID(),
-        name: "Unified fallback",
-        symbol: "app",
-        tintHex: 0,
-        appStoreApp: StoreApp(
-            id: UUID(), platform: .appStore, name: "Correct iOS Name",
-            bundleID: "com.example.ios", storeID: "1", version: "1.0",
-            state: .ready, versionID: nil, appInfoID: nil
-        ),
-        playStoreApp: StoreApp(
-            id: UUID(), platform: .playStore, name: "Correct Android Name",
-            bundleID: "com.example.android", storeID: "com.example.android", version: "1.0",
-            state: .ready, versionID: nil, appInfoID: nil
-        )
-    )
-
-    #expect(reviewReplyAppName(for: app, platform: .appStore) == "Correct iOS Name")
-    #expect(reviewReplyAppName(for: app, platform: .playStore) == "Correct Android Name")
-}
-
-@Test("OpenAI Responses API structured review reply is decoded")
-func openAIReviewReplyResponse() throws {
-    let envelope: [String: Any] = [
-        "status": "completed",
-        "output": [[
-            "type": "message",
-            "content": [[
-                "type": "output_text",
-                "text": #"{"reply":"Thanks for sharing this specific sync issue."}"#
-            ]]
-        ]]
-    ]
-
-    let decoded = try OpenAIClient.decodeReviewReplyResponse(
-        JSONSerialization.data(withJSONObject: envelope)
-    )
-    #expect(decoded == "Thanks for sharing this specific sync issue.")
-}
-
-@Test("Review reply instructions prevent wrong names and invented promises")
-func openAIReviewReplyInstructions() {
-    let instructions = OpenAIClient.reviewReplyInstructions(characterLimit: 350)
-
-    #expect(instructions.contains("The exact product name is app_name"))
-    #expect(instructions.contains("Never mention, infer, or substitute any other app"))
-    #expect(instructions.contains("Do not invent fixes"))
-    #expect(instructions.contains("without promising it will be built"))
-    #expect(instructions.contains("same language as the review"))
-    #expect(instructions.contains("hard maximum of 350 characters"))
-}
-
-@Test("Review replies are normalized and capped without cutting a word")
-func openAIReviewReplyNormalization() {
-    #expect(
-        OpenAIClient.normalizedReviewReply(
-            "  Thank you, Mia!\nWe appreciate the detail.  ",
-            characterLimit: 350
-        ) == "Thank you, Mia! We appreciate the detail."
-    )
-    let capped = OpenAIClient.normalizedReviewReply(
-        "Thank you for the detailed feedback about your daily workflow and the way this feature could help every morning.",
-        characterLimit: 60
-    )
-    #expect(capped.count <= 60)
-    #expect(capped.hasSuffix("…"))
-    #expect(!capped.contains("workf…"))
-}
-
-@Test("Full-listing AI instructions enforce ASO and selected-store limits")
+ @Test("Full-listing AI instructions enforce ASO and selected-store limits")
 func openAIListingASOInstructions() {
     let limits = OpenAITranslationLimits.storeListing(platforms: [.appStore, .playStore])
     let instructions = OpenAIClient.listingTranslationInstructions(limits: limits)
@@ -1363,6 +1061,6 @@ func communityAnalyticsIsNoOp() {
     #expect(!analytics.isEnabled)
     #expect(analytics.serviceName.isEmpty)
     analytics.setEnabled(true)
-    analytics.capture(.appLaunched, plan: .community)
+    analytics.capture(.appLaunched)
     #expect(!analytics.isEnabled)
 }

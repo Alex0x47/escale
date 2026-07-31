@@ -22,7 +22,7 @@
 
 <p align="center">
   <a href="https://www.useescale.com/">Website</a> ·
-  <a href="https://www.useescale.com/download">Download Escale</a> ·
+  <a href="https://www.useescale.com/download/">Download Escale</a> ·
   <a href="#community-or-pro">Compare editions</a> ·
   <a href="https://litefeedback.com/roadmap/Escale">Feedback and roadmap</a>
 </p>
@@ -56,16 +56,16 @@ listing and screenshot management, customer-review replies, single-locale
 translation, and PPP price calculation and preview.
 
 > [!TIP]
-> **Spend less time repeating store work with [Escale Pro](https://www.useescale.com/download).**
+> **Prefer the maintained app? [Download the official Escale distribution](https://www.useescale.com/download/).**
 >
-> Pro includes everything in Community, then adds bulk translation across every
-> locale, one-click regional price application, reusable What's New templates,
-> AI-generated customer-review reply drafts, and Google Play bundle upload with
-> editable draft-release creation.
+> The Pro subscription funds the signed and notarized DMG, licence management,
+> verified in-app updates, release operations, support, and install-and-go
+> convenience. The official distribution also includes commercial workflows
+> maintained outside this Community repository.
 >
 > Escale Pro is currently **$99/year for one user on up to two Macs** and includes
-> current and future Pro features while the subscription is active.
-> [Explore Escale Pro →](https://www.useescale.com/download)
+> the maintained official distribution and updates while the subscription is active.
+> [Explore the official distribution →](https://www.useescale.com/download/)
 
 | Capability | Community | Pro |
 | --- | --- | --- |
@@ -83,10 +83,11 @@ translation, and PPP price calculation and preview.
 AI review-reply drafting requires Escale Pro. Both editions can still write,
 edit, and publish customer-review replies manually.
 
-The Community source and reusable `EscaleCore` and `EscaleUI` libraries remain
-Apache-2.0 licensed. Escale Pro is a separate commercial distribution with
-proprietary licensing and implementation. See
-[the edition architecture](Documentation/EDITIONS.md) for the technical boundary.
+The Community source and reusable `EscaleCore` and `EscaleUI` libraries are
+Apache-2.0 licensed. The Pro name describes the official commercial
+distribution and service, not a change to the Community code's licence. The
+commercial workflow implementations are not shipped as dormant or locked code
+in this repository. See [the edition architecture](Documentation/EDITIONS.md).
 
 ## Before using a production account
 
@@ -118,10 +119,9 @@ There are no third-party Swift package dependencies.
 ## Run from source
 
 ```bash
-git clone git@github.com:Alex0x47/escale.git
+git clone https://github.com/Alex0x47/escale.git
 cd escale
 brew install imagemagick
-./scripts/install-git-hooks.sh
 ./scripts/run-app.sh
 ```
 
@@ -177,8 +177,8 @@ in an account.
 
 Add your own [OpenAI API key](https://platform.openai.com/api-keys) in Escale
 Settings. Requests go directly from the Mac to OpenAI, and usage is billed to
-the account that owns the key. Always review generated translations and reply
-drafts before publishing them.
+the account that owns the key. Always review generated translations before
+publishing them.
 
 ## Local data and security
 
@@ -219,21 +219,18 @@ swift test
 The default tests do not change store data. Optional live smoke tests run only
 when their documented environment variables are supplied in the test code.
 
-Escale's semantic version is stored in [`VERSION`](VERSION). The tracked
-pre-commit hook increments its patch version on each commit, so install the hook
-once per clone with `./scripts/install-git-hooks.sh`.
+Escale's semantic version is stored in [`VERSION`](VERSION) and changes only as
+part of an intentional release. The optional tracked pre-commit hook validates
+the version format without modifying files; install it with
+`./scripts/install-git-hooks.sh`.
 
 ## Contributing
 
 Contributions are welcome, particularly reproducible API fixes, store-response
 fixtures, safer validation and confirmation flows, accessibility improvements,
-tests, and documentation corrections.
-
-1. Fork the repository and create a focused branch.
-2. Make the change without adding credentials or production data.
-3. Add or update tests where appropriate.
-4. Run `swift test`.
-5. Open a pull request describing the affected remote behavior and verification.
+tests, and documentation corrections. See [CONTRIBUTING.md](CONTRIBUTING.md)
+before opening a pull request and [SECURITY.md](SECURITY.md) for private
+vulnerability reporting.
 
 Use the [feedback board](https://litefeedback.com/roadmap/Escale) for feature
 ideas. If a credential may have leaked, revoke it immediately and do not post it

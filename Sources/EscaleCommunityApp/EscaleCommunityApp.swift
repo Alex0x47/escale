@@ -33,9 +33,7 @@ final class AppLifecycleDelegate: NSObject, NSApplicationDelegate {
 @main
 struct EscaleCommunityApp: App {
     @NSApplicationDelegateAdaptor(AppLifecycleDelegate.self) private var appDelegate
-    @StateObject private var store = WorkspaceStore(
-        entitlements: CommunityEntitlements()
-    )
+    @StateObject private var store = WorkspaceStore()
 
     var body: some Scene {
         WindowGroup {

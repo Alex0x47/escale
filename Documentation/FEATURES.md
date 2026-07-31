@@ -1,6 +1,8 @@
-# Escale editions and feature boundaries
+# Escale Community scope
 
-The Community edition must remain a complete manual store-management workflow. Entitlements gate Pro operations, not access to user data or the ability to build and modify the open-source application.
+This repository contains the complete Escale Community application. It must not
+contain commercial workflow implementations hidden behind entitlement checks,
+lock buttons, conditional compilation, or an alternate executable.
 
 ## Community
 
@@ -15,26 +17,13 @@ The Community edition must remain a complete manual store-management workflow. E
 - Translation of a full listing or individual field into one selected locale
 - Creation of editable App Store versions
 
-## Pro
+The Community implementation ends at those boundaries. In particular, it does
+not include bulk locale operations, remote regional-price application, reusable
+release-note templates, AI review drafting, or Google Play bundle/release
+creation. The interface presents Community actions directly and does not show
+disabled commercial controls.
 
-| Capability | Entitlement |
-| --- | --- |
-| Apply reviewed PPP prices to connected stores | `applyRegionalPricing` |
-| Translate fields or release notes across all locales in the selected app | `bulkTranslations` |
-| Save and reuse What’s New templates across apps and locales | `releaseNoteTemplates` |
-| Draft customer-review replies with AI | `draftReviewReplies` |
-| Upload an Android App Bundle and create a Google Play draft release | `uploadGooglePlayBundle` |
-
-`EscaleCommunityApp` always creates its workspace with `CommunityEntitlements`. A private commercial executable supplies its own `EscaleEntitlementProviding` implementation after validating a licence.
-
-Feature checks live in both places:
-
-1. SwiftUI checks display a contextual Escale Pro explanation before starting a gated action.
-2. `WorkspaceStore` checks prevent a gated remote operation from executing if a UI entry point omits its check.
-
-Only shipped and enforced capabilities belong in `EscaleFeature` and in public
-edition comparisons. Planned ideas must not be presented as current Pro
-features.
-
-For PPP pricing, Community calculation and preview remain available; only
-applying the reviewed prices to remote stores is gated.
+The official signed distribution may advertise additional maintained workflows,
+but their implementation belongs outside this public source tree. Shared fixes
+should be extracted to a genuinely Community-usable API before they are added
+here. Planned ideas must not be presented as shipped features.

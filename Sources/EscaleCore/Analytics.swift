@@ -16,10 +16,6 @@ public enum EscaleAnalyticsFailureCategory: String, Sendable {
     case remoteAPI = "remote_api"
     case secureStorage = "secure_storage"
     case unavailable
-    case licenceInvalid = "licence_invalid"
-    case activationLimit = "activation_limit"
-    case subscriptionEnded = "subscription_ended"
-    case paymentReversed = "payment_reversed"
     case unknown
 }
 
@@ -34,7 +30,6 @@ public enum EscaleAnalyticsScope: String, Sendable {
     case google
     case both
     case single
-    case bulk
 }
 
 public enum EscaleAnalyticsScreenshotOperation: String, Sendable {
@@ -43,15 +38,11 @@ public enum EscaleAnalyticsScreenshotOperation: String, Sendable {
     case reorder
 }
 
-public enum EscaleCommercialPlan: String, Sendable {
-    case yearly
-}
-
 /// A deliberately bounded analytics schema.
 ///
 /// Associated values contain only coarse operational metadata. Store content,
 /// account identifiers, app identifiers, credentials, user text, file paths,
-/// prices, and licence keys have no representation in this type.
+/// prices, and credentials have no representation in this type.
 public enum EscaleAnalyticsEvent: Sendable {
     case appLaunched
     case onboardingStepCompleted(step: Int)
@@ -88,11 +79,6 @@ public enum EscaleAnalyticsEvent: Sendable {
         marketCountBucket: String,
         failure: EscaleAnalyticsFailureCategory?
     )
-    case pricingApplyCompleted(
-        scope: EscaleAnalyticsScope,
-        result: EscaleAnalyticsResult,
-        failure: EscaleAnalyticsFailureCategory?
-    )
     case reviewReplyCompleted(
         platform: StorePlatform,
         result: EscaleAnalyticsResult,
@@ -107,18 +93,6 @@ public enum EscaleAnalyticsEvent: Sendable {
         scope: EscaleAnalyticsScope,
         result: EscaleAnalyticsResult
     )
-    case proGateViewed(feature: EscaleFeature)
-    case purchaseLinkOpened(plan: EscaleCommercialPlan)
-    case licenceActivationCompleted(
-        plan: EscaleCommercialPlan?,
-        result: EscaleAnalyticsResult,
-        failure: EscaleAnalyticsFailureCategory?
-    )
-    case licenceDeactivationCompleted(
-        plan: EscaleCommercialPlan,
-        result: EscaleAnalyticsResult,
-        failure: EscaleAnalyticsFailureCategory?
-    )
 
     public var name: String {
         switch self {
@@ -132,14 +106,9 @@ public enum EscaleAnalyticsEvent: Sendable {
         case .listingSaveCompleted: "listing_save_completed"
         case .screenshotOperationCompleted: "screenshot_operation_completed"
         case .pricingPreviewCompleted: "pricing_preview_completed"
-        case .pricingApplyCompleted: "pricing_apply_completed"
         case .reviewReplyCompleted: "review_reply_completed"
         case .manualSyncCompleted: "manual_sync_completed"
         case .appRefreshCompleted: "app_refresh_completed"
-        case .proGateViewed: "pro_gate_viewed"
-        case .purchaseLinkOpened: "purchase_link_opened"
-        case .licenceActivationCompleted: "licence_activation_completed"
-        case .licenceDeactivationCompleted: "licence_deactivation_completed"
         }
     }
 
@@ -187,8 +156,7 @@ public enum EscaleAnalyticsEvent: Sendable {
                 "market_count_bucket": marketCountBucket,
                 "failure_category": failure?.rawValue
             ])
-        case .pricingApplyCompleted(let scope, let result, let failure),
-             .manualSyncCompleted(let scope, let result, let failure):
+        case .manualSyncCompleted(let scope, let result, let failure):
             Self.resultProperties(scope: scope, result: result, failure: failure)
         case .reviewReplyCompleted(let platform, let result, let failure):
             Self.compact([
@@ -198,22 +166,6 @@ public enum EscaleAnalyticsEvent: Sendable {
             ])
         case .appRefreshCompleted(let scope, let result):
             ["scope": scope.rawValue, "result": result.rawValue]
-        case .proGateViewed(let feature):
-            ["feature": feature.rawValue]
-        case .purchaseLinkOpened(let plan):
-            ["commercial_plan": plan.rawValue]
-        case .licenceActivationCompleted(let plan, let result, let failure):
-            Self.compact([
-                "commercial_plan": plan?.rawValue,
-                "result": result.rawValue,
-                "failure_category": failure?.rawValue
-            ])
-        case .licenceDeactivationCompleted(let plan, let result, let failure):
-            Self.compact([
-                "commercial_plan": plan.rawValue,
-                "result": result.rawValue,
-                "failure_category": failure?.rawValue
-            ])
         }
     }
 
@@ -289,7 +241,7 @@ public protocol EscaleAnalyticsProviding: Sendable {
     var isEnabled: Bool { get }
 
     func setEnabled(_ enabled: Bool)
-    func capture(_ event: EscaleAnalyticsEvent, plan: EscalePlan)
+    func capture(_ event: EscaleAnalyticsEvent)
 }
 
 public struct NoOpEscaleAnalytics: EscaleAnalyticsProviding {
@@ -300,7 +252,7 @@ public struct NoOpEscaleAnalytics: EscaleAnalyticsProviding {
     public init() {}
 
     public func setEnabled(_ enabled: Bool) {}
-    public func capture(_ event: EscaleAnalyticsEvent, plan: EscalePlan) {}
+    public func capture(_ event: EscaleAnalyticsEvent) {}
 }
 
 private extension StorePlatform {

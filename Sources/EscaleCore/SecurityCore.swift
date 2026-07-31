@@ -223,8 +223,8 @@ public enum KeychainStore {
         guard status == errSecSuccess, let data = item as? Data else { throw APIError.keychain(status) }
 
         // Tighten items created by older Escale builds in place. Credentials
-        // and licence records must not be available while the Mac is locked,
-        // and must not migrate to another device through a backup.
+        // must not be available while the Mac is locked and must not migrate
+        // to another device through a backup.
         let accessibilityStatus = SecItemUpdate(
             [
                 kSecClass as String: kSecClassGenericPassword,
@@ -265,9 +265,7 @@ let escaleResetKeychainItems: Set<EscaleKeychainItem> = [
     EscaleKeychainItem(service: "app.escale.mac.credentials", account: "openai-api-key"),
     EscaleKeychainItem(service: "app.gouvernail.mac.credentials", account: "app-store-connect"),
     EscaleKeychainItem(service: "app.gouvernail.mac.credentials", account: "google-play-service-account"),
-    EscaleKeychainItem(service: "app.gouvernail.mac.credentials", account: "openai-api-key"),
-    EscaleKeychainItem(service: "app.escale.mac.pro-license", account: "active-license"),
-    EscaleKeychainItem(service: "app.escale.mac.pro-promotion", account: "installation-id")
+    EscaleKeychainItem(service: "app.gouvernail.mac.credentials", account: "openai-api-key")
 ]
 
 struct EscaleKeychainDeletionFailure: Equatable, Sendable {

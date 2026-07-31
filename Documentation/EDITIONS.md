@@ -1,6 +1,8 @@
-# Maintaining community and commercial editions
+# Maintaining Community and the official distribution
 
-Escale uses a shared-package architecture. The community repository is the source of truth for every capability shipped in both editions; the commercial repository contains only commercial additions and its executable shell.
+This repository is the source of truth for Escale Community only. The official
+signed distribution consumes a reviewed, immutable Community revision and adds
+its own distribution services and commercial workflows outside this repository.
 
 ## Repository boundaries
 
@@ -12,13 +14,14 @@ Public Escale repository
 
 Private Escale commercial repository
 ├── dependency: public Escale package at a pinned revision
-├── EscaleProKit
+├── distribution and licence services
+├── commercial workflow implementations
 └── EscaleProApp
 ```
 
-For local development, the private package lives beside this repository at
-`../escale-pro`. Its `EscaleProEntitlements` provider starts in Community mode
-and is unlocked only by the private licence manager.
+For local development, the private package may live beside this repository at
+`../escale-pro`. Release builds must use an immutable tag or commit revision so
+a later Community change cannot alter an already-reviewed distribution.
 
 The private package should import the public library products:
 
@@ -38,33 +41,36 @@ During local development, the private repository can use a local path dependency
 5. Update the private repository's dependency pin.
 6. Run the commercial test and signing pipeline.
 
-No cherry-pick is needed, and commercial source never passes through the public repository.
+Commercial source never passes through the public repository.
 
 If a bug exists only in a commercial feature, fix it in `EscaleProKit`. If a commercial feature reveals a defect in shared behavior, keep the general fix public and the commercial integration private.
 
 ## Adding features
 
-Shared features belong in `EscaleCore` and `EscaleUI`. Commercial-only features belong in `EscaleProKit`. The public UI exposes the root view, settings, sidebar, and current feature screens so the commercial app can compose shared screens without copying them.
+Community features belong in `EscaleCore` and `EscaleUI`. Commercial-only
+features belong in the private distribution repository. Public protocols should
+be general Community extension points, not hooks whose only purpose is to expose
+locked commercial controls.
 
 Avoid conditional compilation such as `#if PRO` in shared files. It makes accidental feature leakage easier and leaves the community build responsible for code it cannot test. Keep edition-specific implementations in edition-specific targets and repositories.
 
-`EscaleUI` exposes an optional `EscaleCommercialActions` environment value.
-The Community executable leaves it unset. A commercial executable can use it
-to open its private purchase and licence-management UI from shared feature
-gates and Settings without placing payment or licence code in the public
-package.
-
 ## Licensing boundary
 
-The public Escale package is licensed under Apache-2.0. The private commercial product may incorporate and modify `EscaleCore` and `EscaleUI` while keeping `EscaleProKit` and the rest of the commercial application proprietary, provided the Apache licence conditions are followed.
+The public Escale package is licensed under Apache-2.0. Selling the official
+signed distribution does not make incorporated Community code proprietary or
+remove recipients' Apache-2.0 rights. The subscription pays for signing,
+notarization, licence management, signed updates, support, release operations,
+and convenience.
 
 The commercial distribution must include a copy of the Apache-2.0 licence, retain applicable copyright and attribution notices, mark modified public files, and reproduce any `NOTICE` file if one is added later. Apache-2.0 does not grant rights to the Escale name or trademarks.
 
-Contributions intentionally submitted to this repository are licensed under Apache-2.0 by default under section 5 of the licence. A separate contributor agreement is therefore not required merely to consume those contributions in an Apache-compliant proprietary distribution, although one may still be useful for broader relicensing or intellectual-property assurances. This is a project-design summary rather than legal advice; have the final distribution and contributor process reviewed professionally.
+Contributions intentionally submitted to this repository are licensed under
+Apache-2.0 by default under section 5 of the licence. This is a project-design
+summary rather than legal advice.
 
 ## Repository locations
 
-- Public Community repository: `git@github.com:Alex0x47/escale.git`
+- Public Community repository: `https://github.com/Alex0x47/escale.git`
 - Private commercial repository: `git@github.com:Alex0x47/escale-pro.git`
 
 Keep the public repository configured as the private package dependency. Do not

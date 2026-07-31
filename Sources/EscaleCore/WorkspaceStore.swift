@@ -33,12 +33,10 @@ public final class WorkspaceStore: ObservableObject {
     @Published public private(set) var appRefreshProgressByID: [UUID: AppRefreshProgress] = [:]
     @Published public private(set) var isOpenAIKeyConfigured = false
     @Published public private(set) var calculatingProductIDs: Set<UUID> = []
-    @Published public private(set) var pricingApplyProgressByProductID: [UUID: PricingApplyProgress] = [:]
     @Published public private(set) var savingScreenshotPlatforms: Set<StorePlatform> = []
     @Published public private(set) var deletingScreenshotIDs: Set<UUID> = []
     @Published public private(set) var isAnalyticsEnabled: Bool
 
-    public let entitlements: any EscaleEntitlementProviding
     public let analytics: any EscaleAnalyticsProviding
 
     private let persistenceKey = "escale.workspace.v2"
@@ -53,10 +51,8 @@ public final class WorkspaceStore: ObservableObject {
     private var pendingEditorPersistence: Task<Void, Never>?
 
     public init(
-        entitlements: any EscaleEntitlementProviding = CommunityEntitlements(),
         analytics: any EscaleAnalyticsProviding = NoOpEscaleAnalytics()
     ) {
-        self.entitlements = entitlements
         self.analytics = analytics
         isAnalyticsEnabled = analytics.isEnabled
         let defaults = UserDefaults.standard
@@ -105,24 +101,6 @@ public final class WorkspaceStore: ObservableObject {
         loadedAppIDs = cachedAppIDs(in: loadedWorkspace)
     }
 
-    public func hasAccess(to feature: EscaleFeature) -> Bool {
-        entitlements.hasAccess(to: feature)
-    }
-
-    @discardableResult
-    public func requireAccess(to feature: EscaleFeature) -> Bool {
-        guard hasAccess(to: feature) else {
-            track(.proGateViewed(feature: feature))
-            showToast(
-                "Escale Pro required",
-                detail: feature.upgradeDescription,
-                kind: .neutral
-            )
-            return false
-        }
-        return true
-    }
-
     public var isAnalyticsAvailable: Bool {
         analytics.isAvailable
     }
@@ -137,7 +115,7 @@ public final class WorkspaceStore: ObservableObject {
     }
 
     public func track(_ event: EscaleAnalyticsEvent) {
-        analytics.capture(event, plan: entitlements.plan)
+        analytics.capture(event)
     }
 
     private static func migratedBoolean(
@@ -189,12 +167,6 @@ public final class WorkspaceStore: ObservableObject {
         return workspace.screenshotDraftsByApp?[appID]?
             .dirtyGalleryKeys
             .contains(screenshotGalleryKey(screenshot)) == true
-    }
-    public var releaseNoteTemplates: [ReleaseNoteTemplate] {
-        (workspace.releaseNoteTemplates ?? []).sorted {
-            if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
-            return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-        }
     }
     public func selectedRatingSummary(for platforms: Set<StorePlatform> = Set(StorePlatform.allCases)) -> StoreRatingSummary? {
         guard let app = selectedApp else { return nil }
@@ -317,7 +289,6 @@ public final class WorkspaceStore: ObservableObject {
         appSyncIssues.removeAll()
         appRefreshProgressByID.removeAll()
         calculatingProductIDs.removeAll()
-        pricingApplyProgressByProductID.removeAll()
         savingScreenshotPlatforms.removeAll()
         deletingScreenshotIDs.removeAll()
         isAnalyticsEnabled = false
@@ -538,142 +509,6 @@ public final class WorkspaceStore: ObservableObject {
         )
     }
 
-    @discardableResult
-    public func createReleaseNoteTemplate(name: String, body: String) -> UUID? {
-        guard requireAccess(to: .releaseNoteTemplates) else { return nil }
-        guard let template = validatedReleaseNoteTemplate(name: name, body: body) else { return nil }
-        if workspace.releaseNoteTemplates == nil {
-            workspace.releaseNoteTemplates = []
-        }
-        workspace.releaseNoteTemplates?.append(template)
-        persist()
-        showToast(
-            "Template saved",
-            detail: "“\(template.name)” is ready in every store listing.",
-            kind: .success
-        )
-        return template.id
-    }
-
-    @discardableResult
-    public func updateReleaseNoteTemplate(id: UUID, name: String, body: String) -> Bool {
-        guard requireAccess(to: .releaseNoteTemplates) else { return false }
-        guard let index = workspace.releaseNoteTemplates?.firstIndex(where: { $0.id == id }),
-              let template = validatedReleaseNoteTemplate(
-                  id: id,
-                  name: name,
-                  body: body,
-                  createdAt: workspace.releaseNoteTemplates?[index].createdAt ?? Date()
-              ) else {
-            return false
-        }
-        workspace.releaseNoteTemplates?[index] = template
-        persist()
-        showToast(
-            "Template updated",
-            detail: "“\(template.name)” is ready to reuse.",
-            kind: .success
-        )
-        return true
-    }
-
-    @discardableResult
-    public func deleteReleaseNoteTemplate(id: UUID) -> Bool {
-        guard requireAccess(to: .releaseNoteTemplates) else { return false }
-        guard let index = workspace.releaseNoteTemplates?.firstIndex(where: { $0.id == id }) else {
-            return false
-        }
-        let template = workspace.releaseNoteTemplates?.remove(at: index)
-        persist()
-        showToast(
-            "Template deleted",
-            detail: template.map { "“\($0.name)” was removed. Existing listings were not changed." }
-                ?? "The template was removed.",
-            kind: .neutral
-        )
-        return true
-    }
-
-    @discardableResult
-    public func applyReleaseNoteTemplate(id: UUID, toLocalization localizationID: UUID) -> Bool {
-        guard requireAccess(to: .releaseNoteTemplates) else { return false }
-        guard let template = workspace.releaseNoteTemplates?.first(where: { $0.id == id }),
-              let appID = selectedAppID,
-              let index = workspace.localizationsByApp[appID]?.firstIndex(where: { $0.id == localizationID }),
-              availablePlatforms(for: appID).contains(.appStore) else {
-            return false
-        }
-        var localization = workspace.localizationsByApp[appID]![index]
-        guard localization.releaseNotes != template.body else {
-            showToast("Template already applied", detail: "The What’s New field already uses “\(template.name)”.", kind: .neutral)
-            return true
-        }
-        localization.releaseNotes = template.body
-        localization.dirtyPlatforms.insert(.appStore)
-        workspace.localizationsByApp[appID]?[index] = localization
-        scheduleEditorPersistence()
-        showToast(
-            "Template applied",
-            detail: "“\(template.name)” now fills the App Store What’s New field. Review it before saving.",
-            kind: .success
-        )
-        return true
-    }
-
-    @discardableResult
-    public func applyReleaseNoteTemplate(id: UUID, toGooglePlayLocale locale: String) -> Bool {
-        guard requireAccess(to: .releaseNoteTemplates) else { return false }
-        guard let template = workspace.releaseNoteTemplates?.first(where: { $0.id == id }) else {
-            return false
-        }
-        guard template.body.count <= googlePlayReleaseNoteCharacterLimit else {
-            showToast(
-                "Template is too long for Google Play",
-                detail: "Shorten it to \(googlePlayReleaseNoteCharacterLimit) characters before applying it to this locale.",
-                kind: .error
-            )
-            return false
-        }
-        setGooglePlayReleaseNote(template.body, locale: locale)
-        showToast(
-            "Template applied",
-            detail: "“\(template.name)” now fills the Google Play release notes for \(locale).",
-            kind: .success
-        )
-        return true
-    }
-
-    private func validatedReleaseNoteTemplate(
-        id: UUID = UUID(),
-        name: String,
-        body: String,
-        createdAt: Date = Date()
-    ) -> ReleaseNoteTemplate? {
-        if let issue = releaseNoteTemplateValidationIssue(name: name, body: body) {
-            showToast("Could not save template", detail: issue, kind: .error)
-            return nil
-        }
-        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let duplicateName = workspace.releaseNoteTemplates?.contains {
-            $0.id != id && $0.name.caseInsensitiveCompare(cleanName) == .orderedSame
-        } == true
-        guard !duplicateName else {
-            showToast(
-                "Choose another template name",
-                detail: "A template named “\(cleanName)” already exists.",
-                kind: .error
-            )
-            return nil
-        }
-        return ReleaseNoteTemplate(
-            id: id,
-            name: cleanName,
-            body: body,
-            createdAt: createdAt,
-            updatedAt: Date()
-        )
-    }
-
     public func googlePlayReleaseNoteLocale(for localization: ListingLocalization) -> String {
         localization.googleLanguage ?? googleLocale(forAppleLocale: localization.locale)
     }
@@ -704,10 +539,7 @@ public final class WorkspaceStore: ObservableObject {
         )
     }
 
-    public func translateGooglePlayReleaseNotes(from sourceLocale: String, to targetLocale: String? = nil) async {
-        if targetLocale == nil {
-            guard requireAccess(to: .bulkTranslations) else { return }
-        }
+    public func translateGooglePlayReleaseNotes(from sourceLocale: String, to targetLocale: String) async {
         guard let appID = selectedAppID else { return }
         let sourceText = googlePlayReleaseNote(in: selectedGooglePlayReleaseNotesBlock, locale: sourceLocale)
         guard !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -719,7 +551,6 @@ public final class WorkspaceStore: ObservableObject {
         let targets = localizations.filter { localization in
             let locale = googlePlayReleaseNoteLocale(for: localization)
             guard canonicalStoreLocale(locale) != canonicalStoreLocale(sourceLocale) else { return false }
-            guard let targetLocale else { return true }
             return canonicalStoreLocale(locale) == canonicalStoreLocale(targetLocale)
         }
         guard !targets.isEmpty else {
@@ -778,7 +609,7 @@ public final class WorkspaceStore: ObservableObject {
             }
             track(.translationCompleted(
                 kind: .releaseNotes,
-                scope: targetLocale == nil ? .bulk : .single,
+                scope: .single,
                 result: failures.isEmpty ? .success : (completed > 0 ? .partial : .failure),
                 targetCountBucket: EscaleAnalyticsEvent.countBucket(targets.count),
                 failure: failures.isEmpty ? nil : .remoteAPI
@@ -787,7 +618,7 @@ public final class WorkspaceStore: ObservableObject {
             showToast("Translation failed", detail: error.localizedDescription, kind: .error)
             track(.translationCompleted(
                 kind: .releaseNotes,
-                scope: targetLocale == nil ? .bulk : .single,
+                scope: .single,
                 result: .failure,
                 targetCountBucket: EscaleAnalyticsEvent.countBucket(targets.count),
                 failure: EscaleAnalyticsEvent.failureCategory(for: error)
@@ -912,12 +743,11 @@ public final class WorkspaceStore: ObservableObject {
 
     public func translateField(_ field: ListingMetadataField, from sourceID: UUID, to targetID: UUID) async {
         guard let appID = selectedAppID else { return }
-        await translateField(
+        await translateSingleField(
             field,
             from: sourceID,
-            to: [targetID],
-            platforms: platformFilter.platforms.intersection(availablePlatforms(for: appID)),
-            announcesAllLocales: false
+            to: targetID,
+            platforms: platformFilter.platforms.intersection(availablePlatforms(for: appID))
         )
     }
 
@@ -927,65 +757,29 @@ public final class WorkspaceStore: ObservableObject {
         to targetID: UUID,
         platforms: Set<StorePlatform>
     ) async {
-        await translateField(
+        await translateSingleField(
             field,
             from: sourceID,
-            to: [targetID],
-            platforms: platforms,
-            announcesAllLocales: false
+            to: targetID,
+            platforms: platforms
         )
     }
 
-    public func translateFieldToAllLocales(_ field: ListingMetadataField, from sourceID: UUID) async {
-        guard let appID = selectedAppID else { return }
-        await translateFieldToAllLocales(
-            field,
-            from: sourceID,
-            platforms: platformFilter.platforms.intersection(availablePlatforms(for: appID))
-        )
-    }
-
-    public func translateFieldToAllLocales(
+    private func translateSingleField(
         _ field: ListingMetadataField,
         from sourceID: UUID,
-        platforms: Set<StorePlatform>
-    ) async {
-        guard requireAccess(to: .bulkTranslations) else { return }
-        guard let appID = selectedAppID else { return }
-        let targetIDs = workspace.localizationsByApp[appID, default: []]
-            .filter { $0.id != sourceID }
-            .map(\.id)
-        await translateField(
-            field,
-            from: sourceID,
-            to: targetIDs,
-            platforms: platforms,
-            announcesAllLocales: true
-        )
-    }
-
-    private func translateField(
-        _ field: ListingMetadataField,
-        from sourceID: UUID,
-        to targetIDs: [UUID],
-        platforms requestedPlatforms: Set<StorePlatform>,
-        announcesAllLocales: Bool
+        to targetID: UUID,
+        platforms requestedPlatforms: Set<StorePlatform>
     ) async {
         guard let appID = selectedAppID,
-              let storedSource = workspace.localizationsByApp[appID]?.first(where: { $0.id == sourceID }) else { return }
+              let storedSource = workspace.localizationsByApp[appID]?.first(where: { $0.id == sourceID }),
+              let target = workspace.localizationsByApp[appID]?.first(where: { $0.id == targetID }) else { return }
         let targetPlatforms = requestedPlatforms.intersection(availablePlatforms(for: appID))
         let fieldPlatforms = field.supportedPlatforms.intersection(targetPlatforms)
         let source = listingLocalization(storedSource, displaying: fieldPlatforms)
         let sourceText = field.value(in: source)
         guard !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             showToast("Nothing to translate", detail: "Add \(field.displayName.lowercased()) in the primary locale first.", kind: .error)
-            return
-        }
-        let targets = targetIDs.compactMap { targetID in
-            workspace.localizationsByApp[appID]?.first(where: { $0.id == targetID })
-        }
-        guard !targets.isEmpty else {
-            showToast("No target locales", detail: "Add another localization before translating \(field.displayName.lowercased()).", kind: .neutral)
             return
         }
 
@@ -997,81 +791,47 @@ public final class WorkspaceStore: ObservableObject {
             let metadataLimits = ListingMetadataLimits(platforms: fieldPlatforms)
             let characterLimit = field.characterLimit(in: metadataLimits)
             let client = OpenAIClient(apiKey: apiKey)
-            let progressDetail = announcesAllLocales
-                ? "Translating from \(source.language) into \(targets.count) locale\(targets.count == 1 ? "" : "s")."
-                : "Translating from the \(source.language) primary listing."
-            showToast("Translating \(field.displayName)…", detail: progressDetail, kind: .progress)
-
-            var translatedCount = 0
-            var failures: [String] = []
-            for (offset, target) in targets.enumerated() {
-                do {
-                    let translatedText = try await client.translateField(
-                        sourceText: sourceText,
-                        field: field,
-                        sourceLocale: source.locale,
-                        targetLocale: target.locale,
-                        targetLanguage: target.language,
-                        characterLimit: characterLimit,
-                        platforms: fieldPlatforms
-                    )
-                    guard let targetIndex = workspace.localizationsByApp[appID]?.firstIndex(where: { $0.id == target.id }) else {
-                        failures.append(target.language)
-                        continue
-                    }
-                    let storedTarget = workspace.localizationsByApp[appID]![targetIndex]
-                    var displayedTarget = listingLocalization(storedTarget, displaying: fieldPlatforms)
-                    field.set(translatedText, in: &displayedTarget)
-                    var updated = applyingListingMetadata(
-                        from: displayedTarget,
-                        to: storedTarget,
-                        platforms: fieldPlatforms
-                    )
-                    updated.dirtyPlatforms.formUnion(fieldPlatforms)
-                    workspace.localizationsByApp[appID]?[targetIndex] = updated
-                    translatedCount += 1
-                } catch {
-                    failures.append("\(target.language): \(error.localizedDescription)")
-                }
-                if offset + 1 < targets.count {
-                    showToast(
-                        "Translating \(field.displayName)…",
-                        detail: "Completed \(offset + 1) of \(targets.count) locales. Next: \(targets[offset + 1].language).",
-                        kind: .progress
-                    )
-                }
-            }
-
-            if translatedCount > 0 { persist() }
-            if failures.isEmpty {
-                let targetDescription = translatedCount == 1 ? "the selected locale" : "all \(translatedCount) locales"
-                showToast(
-                    "\(field.displayName) translated",
-                    detail: "Updated \(targetDescription). Review the draft copy before saving it to the stores.",
-                    kind: .success
-                )
-            } else {
-                let firstFailure = failures.first ?? "Unknown error"
-                showToast(
-                    "Translated \(translatedCount) of \(targets.count) locales",
-                    detail: "The completed drafts were kept. \(firstFailure)",
-                    kind: .error
-                )
-            }
+            showToast("Translating \(field.displayName)…", detail: "Translating from the \(source.language) primary listing.", kind: .progress)
+            let translatedText = try await client.translateField(
+                sourceText: sourceText,
+                field: field,
+                sourceLocale: source.locale,
+                targetLocale: target.locale,
+                targetLanguage: target.language,
+                characterLimit: characterLimit,
+                platforms: fieldPlatforms
+            )
+            guard let targetIndex = workspace.localizationsByApp[appID]?.firstIndex(where: { $0.id == target.id }) else { return }
+            let storedTarget = workspace.localizationsByApp[appID]![targetIndex]
+            var displayedTarget = listingLocalization(storedTarget, displaying: fieldPlatforms)
+            field.set(translatedText, in: &displayedTarget)
+            var updated = applyingListingMetadata(
+                from: displayedTarget,
+                to: storedTarget,
+                platforms: fieldPlatforms
+            )
+            updated.dirtyPlatforms.formUnion(fieldPlatforms)
+            workspace.localizationsByApp[appID]?[targetIndex] = updated
+            persist()
+            showToast(
+                "\(field.displayName) translated",
+                detail: "Updated the selected locale. Review the draft copy before saving it to the stores.",
+                kind: .success
+            )
             track(.translationCompleted(
                 kind: .field,
-                scope: announcesAllLocales ? .bulk : .single,
-                result: failures.isEmpty ? .success : (translatedCount > 0 ? .partial : .failure),
-                targetCountBucket: EscaleAnalyticsEvent.countBucket(targets.count),
-                failure: failures.isEmpty ? nil : .remoteAPI
+                scope: .single,
+                result: .success,
+                targetCountBucket: "1",
+                failure: nil
             ))
         } catch {
             showToast("Translation failed", detail: error.localizedDescription, kind: .error)
             track(.translationCompleted(
                 kind: .field,
-                scope: announcesAllLocales ? .bulk : .single,
+                scope: .single,
                 result: .failure,
-                targetCountBucket: EscaleAnalyticsEvent.countBucket(targets.count),
+                targetCountBucket: "1",
                 failure: EscaleAnalyticsEvent.failureCategory(for: error)
             ))
         }
@@ -1109,99 +869,6 @@ public final class WorkspaceStore: ObservableObject {
                 ? "The draft is editable. It has not been submitted for review."
                 : "Your pending localization changes are preserved and can now be saved. The draft was not submitted for review."
             showToast("Version \(draft.app.version) created", detail: successDetail, kind: .success)
-            return true
-        } catch {
-            showError(error)
-            return false
-        }
-    }
-
-    public func createGooglePlayDraftRelease(
-        bundleFileURL: URL,
-        track: String,
-        releaseName: String
-    ) async -> Bool {
-        guard entitlements.plan == .pro else {
-            self.track(.proGateViewed(feature: .uploadGooglePlayBundle))
-            showToast(
-                "Escale Pro required",
-                detail: EscaleFeature.uploadGooglePlayBundle.upgradeDescription,
-                kind: .neutral
-            )
-            return false
-        }
-        guard let appID = selectedAppID,
-              let appIndex = workspace.apps.firstIndex(where: { $0.id == appID }),
-              var googleApp = workspace.apps[appIndex].playStoreApp else { return false }
-
-        let access = bundleFileURL.startAccessingSecurityScopedResource()
-        defer {
-            if access { bundleFileURL.stopAccessingSecurityScopedResource() }
-        }
-
-        do {
-            guard !isDemoMode else {
-                throw APIError.unsupported("Uploading remote Android bundles is unavailable in demo mode.")
-            }
-            guard bundleFileURL.pathExtension.caseInsensitiveCompare("aab") == .orderedSame else {
-                throw APIError.invalidCredentials("Choose a signed Android App Bundle with the .aab extension.")
-            }
-            let resourceValues = try bundleFileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-            guard resourceValues.isRegularFile == true, (resourceValues.fileSize ?? 0) > 0 else {
-                throw APIError.invalidCredentials("The selected Android App Bundle is empty or unreadable.")
-            }
-            guard let credentials = try CredentialStore.google() else {
-                throw APIError.missingCredentials(.playStore)
-            }
-
-            let taggedReleaseNotes = workspace.googlePlayReleaseNotesByApp?[appID] ?? ""
-            let releaseNotes: [StoreVersionReleaseNote]
-            if googlePlayReleaseNotesValidationIssues(taggedReleaseNotes).isEmpty {
-                releaseNotes = googlePlayReleaseNotes(in: taggedReleaseNotes)
-                    .filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                    .map { StoreVersionReleaseNote(language: $0.locale, text: $0.text) }
-            } else {
-                releaseNotes = []
-            }
-
-            showToast(
-                "Preparing Android bundle…",
-                detail: "Google Play will validate the package, signing key, and version code.",
-                kind: .progress
-            )
-            let result = try await GooglePlayClient(credentials: credentials).createDraftRelease(
-                bundleFileURL: bundleFileURL,
-                packageName: googleApp.bundleID,
-                track: track,
-                releaseName: releaseName,
-                releaseNotes: releaseNotes
-            ) { [weak self] progress in
-                self?.showToast(
-                    "Uploading Android bundle…",
-                    detail: progress.detail,
-                    kind: .progress
-                )
-            }
-
-            googleApp.version = "build \(result.versionCode)"
-            googleApp.state = .draft
-            googleApp.remoteState = "draft"
-            googleApp.versionDetails = StoreVersionDetails(
-                track: result.track,
-                releaseName: result.releaseName,
-                versionCodes: [String(result.versionCode)],
-                releaseNotes: result.releaseNotes,
-                bundleSHA1: result.sha1,
-                bundleSHA256: result.sha256
-            )
-            workspace.apps[appIndex].playStoreApp = googleApp
-            loadedAppIDs.insert(appID)
-            persist()
-            showToast(
-                "Android draft \(result.versionCode) created",
-                detail: "The signed bundle is on \(result.track) as a draft. It has not been submitted for review or released.",
-                kind: .success
-            )
             return true
         } catch {
             showError(error)
@@ -2175,7 +1842,7 @@ public final class WorkspaceStore: ObservableObject {
             product.pricingCalculatedAt = Date()
             workspace.productsByApp[appID]?[productIndex] = product
             persist()
-            showToast("Pricing calculated", detail: "Prepared \(product.regions.count) available markets. Review them before applying.", kind: .success)
+            showToast("Pricing calculated", detail: "Prepared \(product.regions.count) available markets for review.", kind: .success)
             track(.pricingPreviewCompleted(
                 index: product.effectivePricingIndex,
                 result: .success,
@@ -2191,105 +1858,6 @@ public final class WorkspaceStore: ObservableObject {
                 failure: EscaleAnalyticsEvent.failureCategory(for: error)
             ))
         }
-    }
-
-    public func applyPPP(productID: UUID) async {
-        guard requireAccess(to: .applyRegionalPricing) else { return }
-        guard let appID = selectedAppID,
-              let app = selectedApp,
-              let index = workspace.productsByApp[appID]?.firstIndex(where: { $0.id == productID }) else { return }
-        let product = workspace.productsByApp[appID]![index]
-        guard product.pricingCalculatedAt != nil else {
-            showToast("Calculate pricing first", detail: "Choose an index and calculate the store-valid regional prices before applying them.", kind: .error)
-            return
-        }
-        pricingApplyProgressByProductID[productID] = PricingApplyProgress(
-            platform: product.platforms.contains(.appStore) ? .appStore : .playStore,
-            completed: 0,
-            total: 1,
-            detail: "Validating product catalogs…"
-        )
-        defer { pricingApplyProgressByProductID.removeValue(forKey: productID) }
-        showToast("Scheduling regional prices…", detail: "Validating product catalogs.", kind: .progress)
-        if isDemoMode {
-            try? await Task.sleep(for: .milliseconds(500))
-            for regionIndex in workspace.productsByApp[appID]![index].regions.indices where workspace.productsByApp[appID]![index].regions[regionIndex].enabled {
-                workspace.productsByApp[appID]![index].regions[regionIndex].currentPrice = workspace.productsByApp[appID]![index].regions[regionIndex].suggestedPrice
-            }
-            persist()
-            showToast("Prices scheduled", detail: "Demo prices updated locally.", kind: .success)
-            track(.pricingApplyCompleted(
-                scope: EscaleAnalyticsEvent.scope(for: product.platforms),
-                result: .success,
-                failure: nil
-            ))
-            return
-        }
-
-        var completed: Set<StorePlatform> = []
-        var failures: [String] = []
-        if product.platforms.contains(.appStore), product.appleProductID != nil {
-            do {
-                guard let credentials = try CredentialStore.apple() else { throw APIError.missingCredentials(.appStore) }
-                try await AppStoreConnectClient(credentials: credentials).applyRegionalPrices(product: product) { [weak self] progress in
-                    self?.updatePricingApplyProgress(productID: productID, progress: progress)
-                }
-                completed.insert(.appStore)
-            } catch { failures.append("App Store: \(error.localizedDescription)") }
-        }
-        if product.platforms.contains(.playStore), let package = app.playStoreApp?.bundleID {
-            do {
-                guard let credentials = try CredentialStore.google() else { throw APIError.missingCredentials(.playStore) }
-                try await GooglePlayClient(credentials: credentials).applyRegionalPrices(product: product, packageName: package) { [weak self] progress in
-                    self?.updatePricingApplyProgress(productID: productID, progress: progress)
-                }
-                completed.insert(.playStore)
-            } catch { failures.append("Google Play: \(error.localizedDescription)") }
-        }
-        if failures.isEmpty {
-            let schedulesAppleSubscription = product.isSubscription && product.platforms.contains(.appStore)
-            if !schedulesAppleSubscription {
-                for regionIndex in workspace.productsByApp[appID]![index].regions.indices where workspace.productsByApp[appID]![index].regions[regionIndex].enabled {
-                    workspace.productsByApp[appID]![index].regions[regionIndex].currentPrice = workspace.productsByApp[appID]![index].regions[regionIndex].suggestedPrice
-                }
-            }
-            workspace.productsByApp[appID]![index].pricingCalculatedAt = nil
-            persist()
-            let detail = schedulesAppleSubscription
-                ? "App Store changes were scheduled two days ahead. Increases preserve existing prices when selected; Apple automatically passes decreases to existing subscribers."
-                : "The connected stores accepted the regional catalog."
-            showToast(schedulesAppleSubscription ? "Prices scheduled" : "Prices applied", detail: detail, kind: .success)
-            track(.pricingApplyCompleted(
-                scope: EscaleAnalyticsEvent.scope(for: product.platforms),
-                result: .success,
-                failure: nil
-            ))
-        } else if !completed.isEmpty {
-            let names = completed.map(\.rawValue).sorted().joined(separator: " and ")
-            showToast("Pricing partially applied", detail: names + " succeeded. " + failures.joined(separator: " · "), kind: .error)
-            track(.pricingApplyCompleted(
-                scope: EscaleAnalyticsEvent.scope(for: product.platforms),
-                result: .partial,
-                failure: .remoteAPI
-            ))
-        } else {
-            showToast("Pricing was not applied", detail: failures.joined(separator: " · "), kind: .error)
-            track(.pricingApplyCompleted(
-                scope: EscaleAnalyticsEvent.scope(for: product.platforms),
-                result: .failure,
-                failure: .remoteAPI
-            ))
-        }
-    }
-
-    private func updatePricingApplyProgress(productID: UUID, progress: PricingApplyProgress) {
-        pricingApplyProgressByProductID[productID] = progress
-        let countDetail = progress.total > 1 ? " · \(progress.completed) of \(progress.total)" : ""
-        showToast(
-            "Scheduling \(progress.platform.shortName) prices…",
-            detail: progress.detail + countDetail,
-            kind: .progress
-        )
     }
 
     public func reply(to reviewID: UUID, text: String) async {
@@ -2320,54 +1888,6 @@ public final class WorkspaceStore: ObservableObject {
                 failure: EscaleAnalyticsEvent.failureCategory(for: error)
             ))
             showError(error)
-        }
-    }
-
-    public func draftReviewReply(to reviewID: UUID) async -> String? {
-        guard requireAccess(to: .draftReviewReplies) else { return nil }
-        guard let appID = selectedAppID,
-              let app = workspace.apps.first(where: { $0.id == appID }),
-              let review = workspace.reviewsByApp[appID]?.first(where: { $0.id == reviewID }) else {
-            return nil
-        }
-
-        do {
-            guard let apiKey = try CredentialStore.openAIAPIKey() else {
-                throw OpenAIClientError.missingAPIKey
-            }
-            let platform = review.platform
-            let storedLocalizations = workspace.localizationsByApp[appID, default: []]
-            let preferredLocale = platform == .appStore
-                ? app.appStoreApp?.primaryLocale
-                : app.playStoreApp?.primaryLocale
-            let primary = primaryLocalization(
-                in: storedLocalizations,
-                preferredLocale: preferredLocale
-            ).map { listingLocalization($0, displaying: [platform]) }
-            let listingSummary = primary?.description ?? ""
-            let currentReleaseNotes = primary?.releaseNotes ?? ""
-            let appName = reviewReplyAppName(for: app, platform: platform)
-
-            showToast(
-                "Drafting reply…",
-                detail: "Using \(appName) and this review as context.",
-                kind: .progress
-            )
-            let draft = try await OpenAIClient(apiKey: apiKey).draftReviewReply(
-                appName: appName,
-                review: review,
-                listingSummary: listingSummary,
-                currentReleaseNotes: currentReleaseNotes
-            )
-            showToast(
-                "Reply draft ready",
-                detail: "Review and edit the AI-generated response before publishing it.",
-                kind: .success
-            )
-            return draft
-        } catch {
-            showToast("Could not draft reply", detail: error.localizedDescription, kind: .error)
-            return nil
         }
     }
 
@@ -2850,7 +2370,6 @@ private func storeProductCopy(
         googleProductID: platform == .playStore ? product.googleProductID : nil,
         googleBasePlanID: platform == .playStore ? product.googleBasePlanID : nil,
         pricingIndex: product.pricingIndex,
-        subscriberPricePolicy: product.subscriberPricePolicy,
         pricingCalculatedAt: nil,
         pricingSourceSummary: nil
     )
@@ -2871,7 +2390,7 @@ public func cachedAppIDs(in workspace: Workspace) -> Set<UUID> {
 }
 
 /// Replaces store-owned pricing with the latest remote snapshot while retaining
-/// the user's PPP index and subscriber migration policy on the local product.
+/// the user's selected PPP index on the local product.
 public func refreshedStoreProduct(
     _ cached: StoreProduct,
     with remote: StoreProduct,

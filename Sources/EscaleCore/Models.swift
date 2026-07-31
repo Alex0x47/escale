@@ -282,49 +282,6 @@ public struct ListingLocalization: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
-public struct ReleaseNoteTemplate: Identifiable, Codable, Hashable, Sendable {
-    public let id: UUID
-    public var name: String
-    public var body: String
-    public let createdAt: Date
-    public var updatedAt: Date
-
-    public init(
-        id: UUID = UUID(),
-        name: String,
-        body: String,
-        createdAt: Date = Date(),
-        updatedAt: Date = Date()
-    ) {
-        self.id = id
-        self.name = name
-        self.body = body
-        self.createdAt = createdAt
-        self.updatedAt = updatedAt
-    }
-}
-
-public let releaseNoteTemplateNameCharacterLimit = 60
-public let releaseNoteTemplateBodyCharacterLimit = 4_000
-
-public func releaseNoteTemplateValidationIssue(name: String, body: String) -> String? {
-    let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-    let cleanBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
-    if cleanName.isEmpty {
-        return "Give the template a name."
-    }
-    if cleanName.count > releaseNoteTemplateNameCharacterLimit {
-        return "Template names can contain up to \(releaseNoteTemplateNameCharacterLimit) characters."
-    }
-    if cleanBody.isEmpty {
-        return "Add the release notes you want to reuse."
-    }
-    if body.count > releaseNoteTemplateBodyCharacterLimit {
-        return "Templates can contain up to \(releaseNoteTemplateBodyCharacterLimit.formatted()) characters."
-    }
-    return nil
-}
-
 public enum ListingMetadataField: String, CaseIterable, Identifiable, Sendable {
     case title
     case subtitle
@@ -664,14 +621,6 @@ public enum PricingIndex: String, Codable, CaseIterable, Identifiable, Sendable 
     }
 }
 
-public enum SubscriberPricePolicy: String, Codable, CaseIterable, Identifiable, Sendable {
-    case preserve
-    case migrate
-
-    public var id: String { rawValue }
-    public var title: String { self == .preserve ? "Preserve existing prices where allowed" : "Move subscribers to new prices" }
-}
-
 public struct StoreProduct: Identifiable, Codable, Hashable, Sendable {
     public let id: UUID
     public var name: String
@@ -684,28 +633,12 @@ public struct StoreProduct: Identifiable, Codable, Hashable, Sendable {
     public var googleProductID: String?
     public var googleBasePlanID: String?
     public var pricingIndex: PricingIndex? = nil
-    public var subscriberPricePolicy: SubscriberPricePolicy? = nil
     public var pricingCalculatedAt: Date? = nil
     public var pricingSourceSummary: String? = nil
 
     public var effectivePricingIndex: PricingIndex { pricingIndex ?? .worldwidePPP }
-    public var effectiveSubscriberPricePolicy: SubscriberPricePolicy { subscriberPricePolicy ?? .preserve }
     public var isSubscription: Bool { kind.localizedCaseInsensitiveContains("subscription") || kind.localizedCaseInsensitiveContains("auto-renewable") }
 }
-
-public struct PricingApplyProgress: Equatable, Sendable {
-    public var platform: StorePlatform
-    public var completed: Int
-    public var total: Int
-    public var detail: String
-
-    public var fraction: Double {
-        guard total > 0 else { return 0 }
-        return min(1, max(0, Double(completed) / Double(total)))
-    }
-}
-
-public typealias PricingApplyProgressHandler = @MainActor @Sendable (PricingApplyProgress) -> Void
 
 public struct ListingMetadataLimits: Sendable {
     public let title = 30
@@ -764,7 +697,6 @@ public struct Workspace: Codable, Sendable {
     public var productsByApp: [UUID: [StoreProduct]]
     public var reviewsByApp: [UUID: [CustomerReview]]
     public var googlePlayReleaseNotesByApp: [UUID: String]? = nil
-    public var releaseNoteTemplates: [ReleaseNoteTemplate]? = nil
     public var screenshotDraftsByApp: [UUID: ScreenshotDraftState]? = nil
 }
 
@@ -842,12 +774,6 @@ public func localizedCharmPrice(_ value: Double, currency: String) -> Double {
         return max(1, value.rounded())
     }
     return max(0.01, value.rounded(.down) + 0.99)
-}
-
-public func regionsRequiringPriceChange(_ regions: [PriceRegion]) -> [PriceRegion] {
-    regions.filter {
-        $0.enabled && abs($0.suggestedPrice - $0.currentPrice) > 0.000_001
-    }
 }
 
 public func pricingRegionEnabledByDefault(_ code: String) -> Bool {

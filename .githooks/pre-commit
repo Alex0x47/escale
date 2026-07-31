@@ -14,47 +14,6 @@ validate_version() {
     || fail "VERSION must contain a semantic version such as 1.2.3"
 }
 
-is_greater_version() {
-  local previous="$1"
-  local next="$2"
-  local previous_parts=("${(@s:.:)previous}")
-  local next_parts=("${(@s:.:)next}")
-
-  (( next_parts[1] > previous_parts[1] )) && return 0
-  (( next_parts[1] < previous_parts[1] )) && return 1
-  (( next_parts[2] > previous_parts[2] )) && return 0
-  (( next_parts[2] < previous_parts[2] )) && return 1
-  (( next_parts[3] > previous_parts[3] ))
-}
-
-previous_version="$(git show HEAD:VERSION 2>/dev/null | tr -d '[:space:]' || true)"
-if [[ -z "$previous_version" ]]; then
-  staged_version="$(git show :VERSION 2>/dev/null | tr -d '[:space:]' || true)"
-  if [[ -z "$staged_version" ]]; then
-    staged_version="$("$PROJECT_ROOT/scripts/version.sh" current)"
-    git add VERSION
-  fi
-  validate_version "$staged_version"
-  echo "Using initial Escale version $staged_version"
-  exit 0
-fi
-validate_version "$previous_version"
-
-if ! git diff --quiet -- VERSION; then
-  fail "VERSION has unstaged changes. Stage them or restore them before committing."
-fi
-
-staged_version="$(git show :VERSION 2>/dev/null | tr -d '[:space:]')" \
-  || fail "VERSION must be staged"
-validate_version "$staged_version"
-
-if [[ "$staged_version" != "$previous_version" ]]; then
-  is_greater_version "$previous_version" "$staged_version" \
-    || fail "Staged version $staged_version must be greater than $previous_version"
-  echo "Using manually selected Escale version $staged_version"
-  exit 0
-fi
-
-next_version="$("$PROJECT_ROOT/scripts/version.sh" bump-patch)"
-git add VERSION
-echo "Bumped Escale version $previous_version → $next_version"
+version="$("$PROJECT_ROOT/scripts/version.sh" current)"
+validate_version "$version"
+echo "Escale version $version is valid. Release versions are changed explicitly."

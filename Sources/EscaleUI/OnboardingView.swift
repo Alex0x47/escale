@@ -558,7 +558,6 @@ private enum CredentialFileError: LocalizedError {
 
 public struct SettingsView: View {
     @EnvironmentObject private var store: WorkspaceStore
-    @Environment(\.escaleCommercialActions) private var commercialActions
     @Environment(\.dismiss) private var dismiss
 
     public init() {}
@@ -576,7 +575,7 @@ public struct SettingsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(alignment: .top, spacing: 16) {
-                    SectionTitle("Plan", subtitle: "See which Escale capabilities are available on this Mac.")
+                    SectionTitle("Edition", subtitle: "This source build contains the complete Escale Community feature set.")
                     Spacer()
                     Button {
                         dismiss()
@@ -592,41 +591,23 @@ public struct SettingsView: View {
                     .accessibilityLabel("Close settings")
                 }
                 HStack(spacing: 13) {
-                    Image(systemName: store.entitlements.plan == .pro ? "crown.fill" : "person.crop.circle")
+                    Image(systemName: "chevron.left.forwardslash.chevron.right")
                         .foregroundStyle(.white)
                         .frame(width: 38, height: 38)
-                        .background(
-                            store.entitlements.plan == .pro ? Theme.accent : Color.secondary,
-                            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        )
+                        .background(Color.secondary, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(store.entitlements.plan.displayName)
+                        Text("Escale Community")
                             .font(.subheadline.weight(.semibold))
-                        if store.entitlements.plan == .community, commercialActions == nil {
-                            Link(destination: EscaleLinks.officialDownloadPage) {
-                                Label(
-                                    "Download the official, up-to-date app",
-                                    systemImage: "arrow.down.circle.fill"
-                                )
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
-                            .padding(.vertical, 5)
-                        }
-                        Text(
-                            store.entitlements.plan == .pro
-                                ? "Pro capabilities are unlocked."
-                                : "Manual workflows and single-account tools are available."
-                        )
+                        Text("Free and open source under Apache-2.0, with manual store workflows and single-locale AI translation.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    if let commercialActions {
-                        Button(store.entitlements.plan == .pro ? "Manage licence" : "Unlock Pro") {
-                            commercialActions.openLicenceManagement()
-                        }
+                    Link(destination: EscaleLinks.officialDownloadPage) {
+                        Label("Official signed app", systemImage: "arrow.down.circle.fill")
                     }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
                 .padding(14)
                 .cardStyle(cornerRadius: 13)
@@ -718,7 +699,7 @@ public struct SettingsView: View {
                     .cardStyle(cornerRadius: 13)
                 }
                 Divider()
-                SectionTitle("OpenAI", subtitle: "Power translations and customer-review reply drafts with your own API key.")
+                SectionTitle("OpenAI", subtitle: "Power single-locale listing translations with your own API key.")
                 openAISettingsCard
                 Divider()
                 HStack {
@@ -756,7 +737,7 @@ public struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Reset all data")
                             .font(.subheadline.weight(.semibold))
-                        Text("Removes cached app data, settings, credentials, API keys, and any activated licence.")
+                        Text("Removes cached app data, settings, credentials, and API keys.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -806,7 +787,7 @@ public struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This permanently removes the workspace, settings, developer credentials, OpenAI API key, and activated licence from this Mac. Escale will quit. This cannot be undone.")
+            Text("This permanently removes the workspace, settings, developer credentials, and OpenAI API key from this Mac. Escale will quit. This cannot be undone.")
         }
         .sheet(item: $presentedSheet) { sheet in
             switch sheet {

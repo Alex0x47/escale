@@ -1,0 +1,49 @@
+name: Bug report
+description: Report a reproducible problem in Escale Community
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include credentials, licence keys, customer content, private store data, or production identifiers. Report security issues privately using SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: Escale version or commit
+      placeholder: 1.0.1 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS and Mac
+      placeholder: macOS 15.6, M2 MacBook Air
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Use a test or redacted account and state whether any remote write occurred.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety check
+      options:
+        - label: I removed credentials, keys, customer content, and private identifiers.
+          required: true

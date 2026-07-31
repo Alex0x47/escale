@@ -7,10 +7,6 @@ public struct PricingView: View {
     @EnvironmentObject private var store: WorkspaceStore
     @State private var selectedProductID: UUID?
     @State private var search = ""
-    @State private var isApplying = false
-    @State private var showingMigrationConfirmation = false
-    @State private var showingAppleDecreaseConfirmation = false
-    @State private var proFeature: EscaleFeature?
     @State private var basePriceDraft = ""
     @State private var basePriceDraftProductID: UUID?
     @State private var basePriceValidationMessage: String?
@@ -46,29 +42,6 @@ public struct PricingView: View {
         }
         .onChange(of: preferredPricingIndexValue) { _, _ in
             applyPreferredPricingIndex(to: activeProductID)
-        }
-        .confirmationDialog(
-            "Move existing subscribers to the new prices?",
-            isPresented: $showingMigrationConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Apply and migrate subscribers", role: .destructive) { applySelectedProduct() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The stores may notify subscribers, and price increases can require consent. This cannot be silently undone by Escale.")
-        }
-        .confirmationDialog(
-            "Apple will lower prices for existing subscribers",
-            isPresented: $showingAppleDecreaseConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Schedule price decreases") { applySelectedProduct() }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text(appleDecreaseConfirmationMessage)
-        }
-        .sheet(item: $proFeature) { feature in
-            ProFeatureSheet(feature: feature)
         }
     }
 
@@ -226,7 +199,6 @@ public struct PricingView: View {
                 Text("PPP INDEX").frame(width: 90, alignment: .trailing)
                 Text("CURRENT").frame(width: 105, alignment: .trailing)
                 Text("SUGGESTED").frame(width: 112, alignment: .trailing)
-                Text("APPLY").frame(width: 58, alignment: .trailing)
             }
             .font(.caption2.weight(.bold)).tracking(0.5).foregroundStyle(.secondary)
             .padding(.horizontal, 15).padding(.vertical, 12)
@@ -259,7 +231,6 @@ public struct PricingView: View {
                         .font(.subheadline.monospacedDigit()).frame(width: 105, alignment: .trailing)
                     Text("\(region.wrappedValue.suggestedPrice, specifier: "%.2f")")
                         .font(.subheadline.weight(.semibold).monospacedDigit()).foregroundStyle(region.wrappedValue.suggestedPrice < region.wrappedValue.currentPrice ? .green : .primary).frame(width: 112, alignment: .trailing)
-                    Toggle("", isOn: region.enabled).labelsHidden().toggleStyle(.switch).controlSize(.mini).frame(width: 58, alignment: .trailing)
                 }
                 .padding(.horizontal, 15).padding(.vertical, 11)
                 if index != indices.last { Divider().padding(.leading, 55) }
@@ -326,66 +297,11 @@ public struct PricingView: View {
                 .labelsHidden()
                 Text(product.wrappedValue.effectivePricingIndex.detail).font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            if product.wrappedValue.isSubscription {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Current subscribers").font(.caption.weight(.semibold))
-                    Picker("Current subscribers", selection: Binding(
-                        get: { product.wrappedValue.effectiveSubscriberPricePolicy },
-                        set: { product.wrappedValue.subscriberPricePolicy = $0 }
-                    )) {
-                        ForEach(SubscriberPricePolicy.allCases) { policy in Text(policy.title).tag(policy) }
-                    }
-                    .labelsHidden()
-                    Text(subscriberPolicyDetail(product.wrappedValue))
-                        .font(.caption2).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    if product.wrappedValue.effectiveSubscriberPricePolicy == .preserve,
-                       appStoreDecreaseCount(product.wrappedValue) > 0 {
-                        Label(
-                            "\(appStoreDecreaseCount(product.wrappedValue)) selected App Store decrease\(appStoreDecreaseCount(product.wrappedValue) == 1 ? "" : "s") will also apply to existing subscribers",
-                            systemImage: "exclamationmark.triangle.fill"
-                        )
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.orange)
-                        .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
             VStack(alignment: .leading, spacing: 9) {
-                Label("\(product.wrappedValue.regions.filter(\.enabled).count) markets selected", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                Label("\(product.wrappedValue.regions.count) markets previewed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
                 Label("\(product.wrappedValue.platforms.count) connected store \(product.wrappedValue.platforms.count == 1 ? "catalog" : "catalogs")", systemImage: "rectangle.2.swap").foregroundStyle(Theme.accent)
-                if product.wrappedValue.isSubscription {
-                    Label(
-                        subscriberPolicyBadge(product.wrappedValue),
-                        systemImage: product.wrappedValue.effectiveSubscriberPricePolicy == .preserve ? "person.2.slash" : "person.2.badge.gearshape"
-                    )
-                    .foregroundStyle(.secondary)
-                    if product.wrappedValue.platforms.contains(.appStore) {
-                        Label("App Store changes start two days after applying", systemImage: "calendar.badge.clock").foregroundStyle(.secondary)
-                    }
-                }
             }
             .font(.caption.weight(.medium))
-            if let progress = store.pricingApplyProgressByProductID[product.wrappedValue.id] {
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack {
-                        Label(progress.platform.rawValue, systemImage: progress.platform.icon)
-                            .font(.caption.weight(.semibold))
-                        Spacer()
-                        Text("\(progress.completed) / \(progress.total)")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                    ProgressView(value: progress.fraction)
-                        .progressViewStyle(.linear)
-                    Text(progress.detail)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(11)
-                .background(Theme.accent.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Theme.accent.opacity(0.15)))
-            }
             Spacer()
             Button {
                 guard commitBasePriceDraft(to: product) else { return }
@@ -396,54 +312,8 @@ public struct PricingView: View {
                     HStack { ProgressView().controlSize(.small); Text("Calculating all markets…") }.frame(maxWidth: .infinity)
                 } else { Label("Calculate pricing", systemImage: "function").frame(maxWidth: .infinity) }
             }
-            .buttonStyle(.bordered).disabled(store.calculatingProductIDs.contains(product.wrappedValue.id))
-            Button {
-                guard store.hasAccess(to: .applyRegionalPricing) else {
-                    proFeature = .applyRegionalPricing
-                    return
-                }
-                guard product.wrappedValue.pricingCalculatedAt != nil,
-                      basePriceDraftMatches(product.wrappedValue) else { return }
-                selectedProductID = product.wrappedValue.id
-                if product.wrappedValue.isSubscription && product.wrappedValue.effectiveSubscriberPricePolicy == .migrate {
-                    showingMigrationConfirmation = true
-                } else if appStoreDecreaseCount(product.wrappedValue) > 0 {
-                    showingAppleDecreaseConfirmation = true
-                } else {
-                    applySelectedProduct()
-                }
-            } label: {
-                if isApplying {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        if let progress = store.pricingApplyProgressByProductID[product.wrappedValue.id] {
-                            Text(progress.total > 1
-                                 ? "Applying \(progress.completed) of \(progress.total)…"
-                                 : "Applying pricing…")
-                        } else {
-                            Text("Finishing pricing…")
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                } else {
-                    Label(
-                        store.hasAccess(to: .applyRegionalPricing)
-                            ? applyButtonTitle(product.wrappedValue)
-                            : "\(applyButtonTitle(product.wrappedValue)) · Pro",
-                        systemImage: store.hasAccess(to: .applyRegionalPricing)
-                            ? "arrow.up.circle.fill"
-                            : "lock.fill"
-                    )
-                    .frame(maxWidth: .infinity)
-                }
-            }
             .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(
-                isApplying
-                    || product.wrappedValue.pricingCalculatedAt == nil
-                    || !basePriceDraftMatches(product.wrappedValue)
-            )
+            .disabled(store.calculatingProductIDs.contains(product.wrappedValue.id))
         }
         .padding(22)
         .background(Theme.sidebar.opacity(0.6))
@@ -497,63 +367,4 @@ public struct PricingView: View {
         return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
     }
 
-    private func basePriceDraftMatches(_ product: StoreProduct) -> Bool {
-        guard basePriceDraftProductID == product.id,
-              let value = storePriceValue(from: basePriceDraft) else { return false }
-        return abs(value - product.basePrice) <= 0.000_001
-    }
-
-    private func applyButtonTitle(_ product: StoreProduct) -> String {
-        let stores = product.platforms.sorted(by: { $0.rawValue < $1.rawValue }).map(\.rawValue)
-        return stores.isEmpty ? "No linked store" : "Apply new pricing"
-    }
-
-    private func appStoreDecreaseCount(_ product: StoreProduct) -> Int {
-        guard product.isSubscription, product.platforms.contains(.appStore) else { return 0 }
-        return product.regions.filter {
-            $0.enabled && $0.suggestedPrice < $0.currentPrice - 0.000_001
-        }.count
-    }
-
-    private func subscriberPolicyDetail(_ product: StoreProduct) -> String {
-        guard product.effectiveSubscriberPricePolicy == .preserve else {
-            return "Existing cohorts are moved to the new prices. Stores may notify customers or require consent for increases."
-        }
-        if product.platforms.contains(.appStore), product.platforms.contains(.playStore) {
-            return "Apple preserves existing prices for increases only; decreases automatically reach existing subscribers. Google Play keeps legacy price cohorts."
-        }
-        if product.platforms.contains(.appStore) {
-            return "Apple preserves existing subscriber prices for increases only. Price decreases automatically apply to existing subscribers."
-        }
-        return "Google Play keeps legacy subscriber price cohorts while new subscribers receive the new prices."
-    }
-
-    private func subscriberPolicyBadge(_ product: StoreProduct) -> String {
-        guard product.effectiveSubscriberPricePolicy == .preserve else { return "Subscriber migration selected" }
-        return product.platforms.contains(.appStore)
-            ? "Increases preserved · decreases pass through"
-            : "Existing price cohorts preserved"
-    }
-
-    private var appleDecreaseConfirmationMessage: String {
-        guard let productID = selectedProductID,
-              let product = filteredProducts.first(where: { $0.id == productID }) else {
-            return "App Store Connect does not allow a higher legacy subscription price to be preserved when the new price is lower."
-        }
-        let count = appStoreDecreaseCount(product)
-        return "\(count) selected market\(count == 1 ? "" : "s") will decrease. Apple requires existing subscriptions in those markets to renew at the lower price; preservation continues to apply to price increases."
-    }
-
-    private func applySelectedProduct() {
-        guard store.hasAccess(to: .applyRegionalPricing) else {
-            proFeature = .applyRegionalPricing
-            return
-        }
-        guard let productID = activeProductID else { return }
-        isApplying = true
-        Task {
-            await store.applyPPP(productID: productID)
-            isApplying = false
-        }
-    }
 }

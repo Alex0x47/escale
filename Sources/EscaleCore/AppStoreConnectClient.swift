@@ -76,11 +76,6 @@ public struct SubscriptionPriceCandidate: Sendable {
     public let planType: String?
 }
 
-public struct AppleSubscriptionPriceChangePlan: Equatable, Sendable {
-    public let startDate: String
-    public let preserveCurrentPrice: Bool
-}
-
 public struct AppInfoCandidate: Equatable, Sendable {
     public let id: String
     public let state: String
@@ -105,33 +100,6 @@ public func changedAppInfoLocalizationAttributes(
     if title != remoteTitle { attributes["name"] = title }
     if subtitle != remoteSubtitle { attributes["subtitle"] = subtitle }
     return attributes
-}
-
-public func appleSubscriptionPriceChangeStartDate(now: Date = Date()) -> String {
-    var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-    let effectiveDate = calendar.date(byAdding: .day, value: 2, to: now) ?? now
-    let components = calendar.dateComponents([.year, .month, .day], from: effectiveDate)
-    return String(format: "%04d-%02d-%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
-}
-
-func appleInlinePriceLocalID(_ value: String = UUID().uuidString) -> String {
-    "${\(value)}"
-}
-
-public func appleSubscriptionPriceChangePlan(
-    currentPrice: Double,
-    resolvedPrice: Double,
-    policy: SubscriberPricePolicy,
-    startDate: String
-) -> AppleSubscriptionPriceChangePlan? {
-    guard abs(currentPrice - resolvedPrice) > 0.000_001 else { return nil }
-    return AppleSubscriptionPriceChangePlan(
-        startDate: startDate,
-        // Apple doesn't allow preserving a higher legacy price when the new
-        // subscription price is a decrease; existing subscribers receive it.
-        preserveCurrentPrice: resolvedPrice > currentPrice && policy == .preserve
-    )
 }
 
 public func effectiveSubscriptionPriceCandidate(_ candidates: [SubscriptionPriceCandidate], on date: Date) -> SubscriptionPriceCandidate? {
@@ -590,20 +558,6 @@ public struct AppStoreConnectClient: Sendable {
         )
     }
 
-    public func applyRegionalPrices(
-        product: StoreProduct,
-        progress: PricingApplyProgressHandler? = nil
-    ) async throws {
-        guard let productID = product.appleProductID else {
-            throw APIError.unsupported("This product is not linked to an App Store Connect product.")
-        }
-        if product.kind.localizedCaseInsensitiveContains("auto-renewable") {
-            try await applySubscriptionPrices(product: product, subscriptionID: productID, progress: progress)
-        } else {
-            try await applyInAppPurchasePrices(product: product, inAppPurchaseID: productID, progress: progress)
-        }
-    }
-
     public func calculateRegionalPrices(product: StoreProduct, factors: [String: Double]) async throws -> ApplePriceCalculation {
         guard let productID = product.appleProductID else { throw APIError.unsupported("This product is not linked to App Store Connect.") }
         let existing = Dictionary(uniqueKeysWithValues: product.regions.map { ($0.code, $0) })
@@ -909,133 +863,6 @@ public struct AppStoreConnectClient: Sendable {
         return regions.sorted { $0.country < $1.country }
     }
 
-    private func applyInAppPurchasePrices(
-        product: StoreProduct,
-        inAppPurchaseID: String,
-        progress: PricingApplyProgressHandler?
-    ) async throws {
-        let changedRegions = regionsRequiringPriceChange(product.regions).filter { $0.code != "US" }
-        let total = changedRegions.count + 2
-        await progress?(PricingApplyProgress(
-            platform: .appStore, completed: 0, total: total,
-            detail: "Resolving the App Store base price point…"
-        ))
-        let usRegion = product.regions.first(where: { $0.code == "US" })
-        let desiredBasePrice = usRegion.map { $0.enabled ? $0.suggestedPrice : $0.currentPrice } ?? product.basePrice
-        let basePoint = try await closestIAPPricePoint(productID: inAppPurchaseID, territory: "USA", desiredPrice: desiredBasePrice)
-        await progress?(PricingApplyProgress(
-            platform: .appStore, completed: 1, total: total,
-            detail: "Loading available App Store territories…"
-        ))
-        var selections: [(territory: String, pointID: String)] = [("USA", basePoint.id)]
-        let territories = try await equalizedPrices(path: "/v1/inAppPurchasePricePoints/\(basePoint.id)/equalizations")
-        let territoryByISO2 = Dictionary(uniqueKeysWithValues: territories.compactMap { item in iso2(fromISO3: item.territory).map { ($0, item.territory) } })
-        for (offset, region) in changedRegions.enumerated() {
-            guard let territory = territoryByISO2[region.code] else { continue }
-            let point = try await closestIAPPricePoint(productID: inAppPurchaseID, territory: territory, desiredPrice: region.suggestedPrice)
-            selections.append((territory, point.id))
-            await progress?(PricingApplyProgress(
-                platform: .appStore, completed: offset + 2, total: total,
-                detail: "Resolved \(region.country) · \(offset + 1) of \(changedRegions.count) changed markets"
-            ))
-        }
-
-        var included: [[String: Any]] = []
-        var manualLinkages: [[String: String]] = []
-        for selection in selections {
-            let localID = appleInlinePriceLocalID()
-            manualLinkages.append(["type": "inAppPurchasePrices", "id": localID])
-            included.append([
-                "type": "inAppPurchasePrices",
-                "id": localID,
-                "attributes": [:],
-                "relationships": [
-                    "inAppPurchaseV2": ["data": ["type": "inAppPurchases", "id": inAppPurchaseID]],
-                    "inAppPurchasePricePoint": ["data": ["type": "inAppPurchasePricePoints", "id": selection.pointID]]
-                ]
-            ])
-        }
-        let body: [String: Any] = [
-            "data": [
-                "type": "inAppPurchasePriceSchedules",
-                "relationships": [
-                    "inAppPurchase": ["data": ["type": "inAppPurchases", "id": inAppPurchaseID]],
-                    "baseTerritory": ["data": ["type": "territories", "id": "USA"]],
-                    "manualPrices": ["data": manualLinkages]
-                ]
-            ],
-            "included": included
-        ]
-        await progress?(PricingApplyProgress(
-            platform: .appStore, completed: max(1, total - 1), total: total,
-            detail: "Submitting the App Store price schedule…"
-        ))
-        _ = try await request(path: "/v1/inAppPurchasePriceSchedules", method: "POST", body: HTTPTransport.jsonBody(body))
-        await progress?(PricingApplyProgress(
-            platform: .appStore, completed: total, total: total,
-            detail: "App Store accepted the price schedule."
-        ))
-    }
-
-    private func applySubscriptionPrices(
-        product: StoreProduct,
-        subscriptionID: String,
-        progress: PricingApplyProgressHandler?
-    ) async throws {
-        let basePoint = try await closestSubscriptionPricePoint(subscriptionID: subscriptionID, territory: "USA", desiredPrice: product.basePrice)
-        let territories = try await equalizedPrices(path: "/v1/subscriptionPricePoints/\(basePoint.id)/equalizations")
-        let territoryByISO2 = appleTerritoryIdentifiers(equalizations: territories, includesUSBase: true)
-        let startDate = appleSubscriptionPriceChangeStartDate()
-        let changedRegions = regionsRequiringPriceChange(product.regions)
-            .filter { territoryByISO2[$0.code] != nil }
-        guard !changedRegions.isEmpty else {
-            await progress?(PricingApplyProgress(
-                platform: .appStore, completed: 1, total: 1,
-                detail: "No App Store territory needs a new schedule."
-            ))
-            return
-        }
-        await progress?(PricingApplyProgress(
-            platform: .appStore, completed: 0, total: changedRegions.count,
-            detail: "Resolving legal price points for \(changedRegions.count) changed markets…"
-        ))
-        for (offset, region) in changedRegions.enumerated() {
-            guard let territory = territoryByISO2[region.code] else { continue }
-            let point = try await closestSubscriptionPricePoint(subscriptionID: subscriptionID, territory: territory, desiredPrice: region.suggestedPrice)
-            guard let plan = appleSubscriptionPriceChangePlan(
-                currentPrice: region.currentPrice,
-                resolvedPrice: point.price,
-                policy: product.effectiveSubscriberPricePolicy,
-                startDate: startDate
-            ) else {
-                await progress?(PricingApplyProgress(
-                    platform: .appStore, completed: offset + 1, total: changedRegions.count,
-                    detail: "Validated \(region.country) · no schedule needed"
-                ))
-                continue
-            }
-            let body: [String: Any] = [
-                "data": [
-                    "type": "subscriptionPrices",
-                    "attributes": [
-                        "startDate": plan.startDate,
-                        "preserveCurrentPrice": plan.preserveCurrentPrice
-                    ],
-                    "relationships": [
-                        "subscription": ["data": ["type": "subscriptions", "id": subscriptionID]],
-                        "territory": ["data": ["type": "territories", "id": territory]],
-                        "subscriptionPricePoint": ["data": ["type": "subscriptionPricePoints", "id": point.id]]
-                    ]
-                ]
-            ]
-            _ = try await request(path: "/v1/subscriptionPrices", method: "POST", body: HTTPTransport.jsonBody(body))
-            await progress?(PricingApplyProgress(
-                platform: .appStore, completed: offset + 1, total: changedRegions.count,
-                detail: "Scheduled \(region.country) · \(offset + 1) of \(changedRegions.count)"
-            ))
-        }
-    }
-
     private func equalizedPrices(path: String) async throws -> [(territory: String, price: Double, currency: String)] {
         let response = try await request(path: path, query: [
             URLQueryItem(name: "include", value: "territory"),
@@ -1291,19 +1118,6 @@ public func appleCalculatedPriceRegions(
         enabled: pricingRegionEnabledByDefault("US")
     ))
     return regions.sorted { $0.country < $1.country }
-}
-
-public func appleTerritoryIdentifiers(
-    equalizations: [(territory: String, price: Double, currency: String)],
-    includesUSBase: Bool
-) -> [String: String] {
-    var result = Dictionary(uniqueKeysWithValues: equalizations.compactMap { item in
-        iso2(fromISO3: item.territory).map { ($0, item.territory) }
-    })
-    if includesUSBase {
-        result["US"] = "USA"
-    }
-    return result
 }
 
 public func defaultPriceRegions(basePrice: Double) -> [PriceRegion] {

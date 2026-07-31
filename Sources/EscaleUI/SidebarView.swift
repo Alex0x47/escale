@@ -5,17 +5,12 @@ public struct SidebarView: View {
     public init() {}
 
     @EnvironmentObject private var store: WorkspaceStore
-    @Environment(\.escaleCommercialActions) private var commercialActions
-    @Environment(\.openURL) private var openURL
-    @AppStorage("escale.pro-promotion.started-at.v1") private var promotionStartedAtValue = 0.0
     @State private var showsConnections = false
     @State private var isProductSelectorHovered = false
     @State private var isAppSelectorPresented = false
-    @State private var showsOfficialDownloadPrompt = false
     @State private var pairingRequest: AppPairingRequest?
     @State private var selectedStoreVersion: StoreApp?
     @State private var newIOSVersionRequest: NewIOSVersionRequest?
-    @State private var showingNewAndroidVersion = false
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -89,13 +84,7 @@ public struct SidebarView: View {
                             }
                         }
                         if let android = app.playStoreApp {
-                            VStack(spacing: 4) {
-                                StoreVersionRow(app: android) { selectedStoreVersion = android }
-                                NewStoreVersionButton(platform: .playStore) {
-                                    openNewAndroidVersion()
-                                }
-                                .help("Upload a signed bundle and create a Google Play draft")
-                            }
+                            StoreVersionRow(app: android) { selectedStoreVersion = android }
                         }
                         if app.linkedCount == 1 {
                             Button {
@@ -153,41 +142,8 @@ public struct SidebarView: View {
             .contentShape(Rectangle())
             .help("Connect or disconnect store accounts")
 
-            if store.entitlements.plan != .pro {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    let startedAt = promotionStartedAt
-                    let remaining = max(
-                        0,
-                        Self.promotionDuration - context.date.timeIntervalSince(startedAt)
-                    )
-                    if remaining > 0 {
-                        Button {
-                            openPromotion(startedAt: startedAt)
-                        } label: {
-                            ProPromotionBanner(remaining: remaining)
-                        }
-                        .buttonStyle(.plain)
-                        .padding(.horizontal, 10)
-                        .padding(.bottom, 10)
-                        .help("Get 30% off Escale Pro")
-                    }
-                }
-            }
         }
         .background(Theme.sidebar)
-        .onAppear {
-            if promotionStartedAtValue == 0 {
-                promotionStartedAtValue = Date().timeIntervalSince1970
-            }
-        }
-        .alert("Download the official Escale app", isPresented: $showsOfficialDownloadPrompt) {
-            Button("Not now", role: .cancel) {}
-            Button("Open download page") {
-                openURL(EscaleLinks.officialDownloadPage)
-            }
-        } message: {
-            Text("Pro purchases and licence activation are available only in the official Escale download. Your Community workspace will remain available.")
-        }
         .sheet(isPresented: $showsConnections) {
             SettingsView().environmentObject(store).frame(width: 680, height: 650)
         }
@@ -203,16 +159,6 @@ public struct SidebarView: View {
             NewIOSVersionSheet(initialVersion: request.suggestedVersion)
                 .environmentObject(store)
         }
-        .sheet(isPresented: $showingNewAndroidVersion) {
-            NewAndroidVersionSheet()
-                .environmentObject(store)
-        }
-    }
-
-    private static let promotionDuration: TimeInterval = 12 * 60 * 60
-    private var promotionStartedAt: Date {
-        guard promotionStartedAtValue > 0 else { return Date() }
-        return Date(timeIntervalSince1970: promotionStartedAtValue)
     }
 
     private func openNewIOSVersion(_ app: StoreApp) {
@@ -222,28 +168,6 @@ public struct SidebarView: View {
         )
     }
 
-    private func openNewAndroidVersion() {
-        showingNewAndroidVersion = true
-    }
-
-    private func openPromotion(startedAt: Date) {
-        guard let promotionCheckoutURL = commercialActions?.promotionCheckoutURL else {
-            showsOfficialDownloadPrompt = true
-            return
-        }
-
-        Task {
-            guard let url = await promotionCheckoutURL(startedAt) else {
-                store.showToast(
-                    "The launch offer is unavailable",
-                    detail: "Check your connection and try again before the timer expires.",
-                    kind: .error
-                )
-                return
-            }
-            openURL(url)
-        }
-    }
 
     @ViewBuilder
     private var productSelector: some View {
@@ -373,70 +297,6 @@ public struct SidebarView: View {
     private func connectionDot(_ platform: StorePlatform) -> some View {
         let connected = store.workspace.connections.first(where: { $0.platform == platform })?.state == .connected
         Circle().fill(connected ? platform.tint : Color.secondary).frame(width: 7, height: 7)
-    }
-}
-
-private struct ProPromotionBanner: View {
-    let remaining: TimeInterval
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack {
-                Label("12-HOUR OFFER", systemImage: "sparkles")
-                    .font(.caption2.weight(.heavy))
-                    .tracking(0.7)
-                Spacer()
-                Text("-30%")
-                    .font(.caption.weight(.heavy))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(.white.opacity(0.2), in: Capsule())
-            }
-
-            Text("Unlock Escale Pro")
-                .font(.subheadline.weight(.bold))
-
-            HStack(spacing: 6) {
-                Image(systemName: "clock.fill")
-                Text("Ends in \(formattedRemaining)")
-                    .monospacedDigit()
-                Spacer()
-                Image(systemName: "arrow.right.circle.fill")
-                    .font(.system(size: 17, weight: .semibold))
-            }
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.white.opacity(0.9))
-        }
-        .foregroundStyle(.white)
-        .padding(13)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(
-                colors: [Color(hex: 0xFF6B35), Color(hex: 0x7C3AED)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            ),
-            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(.white.opacity(0.18))
-        )
-        .shadow(color: Color(hex: 0x7C3AED).opacity(0.22), radius: 12, y: 5)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("30 percent off Escale Pro")
-        .accessibilityValue("Offer ends in \(formattedRemaining)")
-    }
-
-    private var formattedRemaining: String {
-        let seconds = max(0, Int(remaining.rounded(.down)))
-        return String(
-            format: "%02d:%02d:%02d",
-            seconds / 3_600,
-            (seconds % 3_600) / 60,
-            seconds % 60
-        )
     }
 }
 

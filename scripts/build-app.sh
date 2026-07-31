@@ -4,14 +4,22 @@ set -euo pipefail
 PROJECT_ROOT="${0:A:h:h}"
 APP_BUNDLE="$PROJECT_ROOT/dist/Escale.app"
 CONTENTS="$APP_BUNDLE/Contents"
-ICONSET="$(mktemp -d)/AppIcon.iconset"
+TEMPORARY_DIRECTORY="$(mktemp -d)"
+ICONSET="$TEMPORARY_DIRECTORY/AppIcon.iconset"
 BUILD_CONFIGURATION="${ESCALE_BUILD_CONFIGURATION:-release}"
 
-mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources" "$ICONSET"
+cleanup() {
+  rm -rf -- "$TEMPORARY_DIRECTORY"
+}
+trap cleanup EXIT
+
+rm -rf -- "$APP_BUNDLE"
+mkdir -p "$CONTENTS/MacOS" "$CONTENTS/Resources/Licenses" "$ICONSET"
 
 swift build --package-path "$PROJECT_ROOT" -c "$BUILD_CONFIGURATION"
 cp "$PROJECT_ROOT/.build/$BUILD_CONFIGURATION/Escale" "$CONTENTS/MacOS/Escale"
 cp "$PROJECT_ROOT/Support/Info.plist" "$CONTENTS/Info.plist"
+cp "$PROJECT_ROOT/LICENSE" "$CONTENTS/Resources/Licenses/Escale-Community-Apache-2.0.txt"
 "$PROJECT_ROOT/scripts/version.sh" apply-to-plist "$CONTENTS/Info.plist"
 
 RESOURCE_BUNDLE="$PROJECT_ROOT/.build/$BUILD_CONFIGURATION/Escale_EscaleCommunityApp.bundle"

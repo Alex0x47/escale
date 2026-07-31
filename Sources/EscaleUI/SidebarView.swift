@@ -11,6 +11,7 @@ public struct SidebarView: View {
     @State private var pairingRequest: AppPairingRequest?
     @State private var selectedStoreVersion: StoreApp?
     @State private var newIOSVersionRequest: NewIOSVersionRequest?
+    @State private var officialDistributionFeature: OfficialDistributionFeature?
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -84,7 +85,13 @@ public struct SidebarView: View {
                             }
                         }
                         if let android = app.playStoreApp {
-                            StoreVersionRow(app: android) { selectedStoreVersion = android }
+                            VStack(spacing: 4) {
+                                StoreVersionRow(app: android) { selectedStoreVersion = android }
+                                NewStoreVersionButton(platform: .playStore) {
+                                    officialDistributionFeature = .uploadGooglePlayBundle
+                                }
+                                .help("Upload a signed bundle and create a Google Play draft with Escale Pro")
+                            }
                         }
                         if app.linkedCount == 1 {
                             Button {
@@ -158,6 +165,9 @@ public struct SidebarView: View {
         .sheet(item: $newIOSVersionRequest) { request in
             NewIOSVersionSheet(initialVersion: request.suggestedVersion)
                 .environmentObject(store)
+        }
+        .sheet(item: $officialDistributionFeature) { feature in
+            OfficialDistributionFeatureSheet(feature: feature)
         }
     }
 

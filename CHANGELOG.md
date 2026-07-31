@@ -4,8 +4,11 @@ All notable changes to Escale Community are documented here.
 
 ## Unreleased
 
-- Added contextual links to official-distribution workflows without restoring
-  commercial implementations, entitlements, or locked controls.
+- Added contextual callouts and feature entry points for official-distribution
+  workflows. Community controls open an informational Pro sheet without
+  restoring commercial implementations, entitlements, or operation hooks.
+- Clarified during App Store Connect setup that fetching iOS apps can take a few
+  minutes for larger accounts.
 
 ## 1.0.1 — 2026-07-31
 

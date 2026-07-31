@@ -145,6 +145,7 @@ private struct ReviewDetail: View {
     let review: CustomerReview
     @State private var response = ""
     @State private var isSending = false
+    @State private var officialDistributionFeature: OfficialDistributionFeature?
 
     var body: some View {
         ScrollView {
@@ -198,6 +199,9 @@ private struct ReviewDetail: View {
             .padding(28)
             .frame(maxWidth: 820, alignment: .leading)
         }
+        .sheet(item: $officialDistributionFeature) { feature in
+            OfficialDistributionFeatureSheet(feature: feature)
+        }
     }
 
     private var replyComposer: some View {
@@ -205,6 +209,13 @@ private struct ReviewDetail: View {
             HStack {
                 Text("Write a response").font(.headline)
                 Spacer()
+                Button {
+                    officialDistributionFeature = .draftReviewReplies
+                } label: {
+                    Label("Draft with AI", systemImage: "sparkles")
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.accent)
             }
             TextField("Thank the customer or offer help…", text: $response, axis: .vertical)
                 .textFieldStyle(.plain).lineLimit(5...10)

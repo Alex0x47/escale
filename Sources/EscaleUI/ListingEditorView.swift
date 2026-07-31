@@ -14,6 +14,7 @@ public struct ListingEditorView: View {
     @State private var isSavingLocalizations = false
     @State private var translatingFields: Set<ListingMetadataField> = []
     @State private var isTranslatingPlayReleaseNotes = false
+    @State private var officialDistributionFeature: OfficialDistributionFeature?
 
     public var body: some View {
         HSplitView {
@@ -40,6 +41,9 @@ public struct ListingEditorView: View {
             if selectedLocalizationID.map(ids.contains) != true {
                 selectedLocalizationID = ids.first
             }
+        }
+        .sheet(item: $officialDistributionFeature) { feature in
+            OfficialDistributionFeatureSheet(feature: feature)
         }
     }
 
@@ -255,6 +259,14 @@ public struct ListingEditorView: View {
                 }
                 Spacer()
                 Button {
+                    officialDistributionFeature = .bulkTranslations
+                } label: {
+                    Label("Translate all locales", systemImage: "character.book.closed.fill")
+                }
+                .buttonStyle(.bordered)
+                .tint(Theme.accent)
+                .help("Translate the complete primary listing into every locale with Escale Pro")
+                Button {
                     guard let source = primaryLocalization else { return }
                     let platforms = activeEditingPlatforms
                     isTranslating = true
@@ -392,8 +404,11 @@ public struct ListingEditorView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                if !isPrimary {
-                    Button {
+                Button {
+                    if isPrimary {
+                        officialDistributionFeature = .bulkTranslations
+                        return
+                    }
                     guard !sourceLocale.isEmpty else { return }
                     isTranslatingPlayReleaseNotes = true
                     Task {
@@ -410,19 +425,31 @@ public struct ListingEditorView: View {
                             Text("Translating…")
                         }
                     } else {
-                        Label("AI · From primary", systemImage: "arrow.right.circle.fill")
+                        Label(
+                            isPrimary ? "AI · Translate to all" : "AI · From primary",
+                            systemImage: isPrimary ? "character.book.closed.fill" : "arrow.right.circle.fill"
+                        )
                     }
                 }
                 .font(.caption2.weight(.semibold))
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
-                .tint(Color.blue)
+                .tint(isPrimary ? Theme.accent : Color.blue)
                 .disabled(
                     isTranslatingPlayReleaseNotes
                         || sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                         || primary == nil
                 )
+                Button {
+                    officialDistributionFeature = .releaseNoteTemplates
+                } label: {
+                    Label("Templates", systemImage: "doc.on.doc.fill")
                 }
+                .font(.caption2.weight(.semibold))
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .tint(Theme.accent)
+                .help("Reuse What’s New templates with Escale Pro")
                 Text("\(note.wrappedValue.count) / \(googlePlayReleaseNoteCharacterLimit)")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(note.wrappedValue.count > googlePlayReleaseNoteCharacterLimit ? .red : .secondary)
@@ -524,9 +551,19 @@ public struct ListingEditorView: View {
             HStack {
                 Text(focus.displayName.uppercased()).font(.caption2.weight(.bold)).tracking(0.65).foregroundStyle(.secondary)
                 Spacer()
-                if localization.id != primaryLocalization?.id {
-                    fieldTranslationButton(focus, localization: localization)
+                if focus == .releaseNotes {
+                    Button {
+                        officialDistributionFeature = .releaseNoteTemplates
+                    } label: {
+                        Label("Templates", systemImage: "doc.on.doc.fill")
+                    }
+                    .font(.caption2.weight(.semibold))
+                    .buttonStyle(.bordered)
+                    .controlSize(.mini)
+                    .tint(Theme.accent)
+                    .help("Reuse What’s New templates with Escale Pro")
                 }
+                fieldTranslationButton(focus, localization: localization)
                 Text("\(text.wrappedValue.count) / \(limit)").font(.caption.monospacedDigit()).foregroundStyle(text.wrappedValue.count > limit ? .red : .secondary)
             }
             Group {
@@ -554,11 +591,17 @@ public struct ListingEditorView: View {
         localization: ListingLocalization
     ) -> some View {
         let primary = primaryLocalization
+        let isPrimary = localization.id == primary?.id
         let isRunning = translatingFields.contains(field)
         let sourceIsEmpty = primary.map {
             field.value(in: $0).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         } ?? true
+        let hasTargets = displayedLocalizations.contains(where: { $0.id != localization.id })
         return Button {
+            if isPrimary {
+                officialDistributionFeature = .bulkTranslations
+                return
+            }
             guard let primary else { return }
             translatingFields.insert(field)
             let platforms = activeEditingPlatforms
@@ -578,21 +621,27 @@ public struct ListingEditorView: View {
                     Text("Translating…")
                 }
             } else {
-                Label("AI · From primary", systemImage: "arrow.right.circle.fill")
+                Label(
+                    isPrimary ? "AI · Translate to all" : "AI · From primary",
+                    systemImage: isPrimary ? "character.book.closed.fill" : "arrow.right.circle.fill"
+                )
             }
         }
         .font(.caption2.weight(.semibold))
         .buttonStyle(.bordered)
         .controlSize(.mini)
-        .tint(Color.blue)
+        .tint(isPrimary ? Theme.accent : Color.blue)
         .disabled(
             isTranslating
                 || !translatingFields.isEmpty
                 || sourceIsEmpty
                 || primary == nil
+                || (isPrimary && !hasTargets)
         )
         .help(
-            "Replace only \(field.displayName.lowercased()) with an AI translation of the primary locale."
+            isPrimary
+                ? "Translate \(field.displayName.lowercased()) into every other locale with Escale Pro."
+                : "Replace only \(field.displayName.lowercased()) with an AI translation of the primary locale."
         )
     }
 

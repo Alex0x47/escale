@@ -10,6 +10,7 @@ public struct PricingView: View {
     @State private var basePriceDraft = ""
     @State private var basePriceDraftProductID: UUID?
     @State private var basePriceValidationMessage: String?
+    @State private var officialDistributionFeature: OfficialDistributionFeature?
     @FocusState private var isBasePriceFocused: Bool
     @AppStorage(EscalePreferences.preferredPricingIndexKey)
     private var preferredPricingIndexValue = PricingIndex.worldwidePPP.rawValue
@@ -42,6 +43,9 @@ public struct PricingView: View {
         }
         .onChange(of: preferredPricingIndexValue) { _, _ in
             applyPreferredPricingIndex(to: activeProductID)
+        }
+        .sheet(item: $officialDistributionFeature) { feature in
+            OfficialDistributionFeatureSheet(feature: feature)
         }
     }
 
@@ -312,8 +316,17 @@ public struct PricingView: View {
                     HStack { ProgressView().controlSize(.small); Text("Calculating all markets…") }.frame(maxWidth: .infinity)
                 } else { Label("Calculate pricing", systemImage: "function").frame(maxWidth: .infinity) }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.bordered)
             .disabled(store.calculatingProductIDs.contains(product.wrappedValue.id))
+            Button {
+                officialDistributionFeature = .applyRegionalPricing
+            } label: {
+                Label("Apply new pricing", systemImage: "arrow.up.circle.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .tint(Theme.accent)
             OfficialDistributionCallout(
                 title: "Apply approved prices automatically",
                 detail: "Preview and review suggestions here, then use the official distribution to write regional prices to App Store Connect and Google Play."

@@ -7,6 +7,7 @@ public struct OverviewView: View {
     @EnvironmentObject private var store: WorkspaceStore
     @State private var pairingRequest: AppPairingRequest?
     @State private var newIOSVersionRequest: NewIOSVersionRequest?
+    @State private var officialDistributionFeature: OfficialDistributionFeature?
 
     private var localizationHealth: String {
         guard !store.selectedLocalizations.isEmpty else { return "—" }
@@ -98,6 +99,9 @@ public struct OverviewView: View {
             NewIOSVersionSheet(initialVersion: request.suggestedVersion)
                 .environmentObject(store)
         }
+        .sheet(item: $officialDistributionFeature) { feature in
+            OfficialDistributionFeatureSheet(feature: feature)
+        }
     }
 
     @ViewBuilder
@@ -157,6 +161,17 @@ public struct OverviewView: View {
                 .tint(StorePlatform.appStore.tint)
                 .controlSize(.large)
                 .help("Create a new editable App Store version")
+            }
+            if app.playStoreApp != nil {
+                Button {
+                    officialDistributionFeature = .uploadGooglePlayBundle
+                } label: {
+                    Label("New Android version", systemImage: "shippingbox.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(StorePlatform.playStore.tint)
+                .controlSize(.large)
+                .help("Upload a signed bundle and create a Google Play draft with Escale Pro")
             }
             Button {
                 store.selectedSection = .listing

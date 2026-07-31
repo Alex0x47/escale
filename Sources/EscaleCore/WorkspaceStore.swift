@@ -307,7 +307,11 @@ public final class WorkspaceStore: ObservableObject {
         guard !credentials.issuerID.isEmpty, !credentials.keyID.isEmpty, credentials.privateKeyPEM.contains("PRIVATE KEY") else {
             throw APIError.invalidCredentials("Enter the issuer ID, key ID, and a valid .p8 private key.")
         }
-        showToast("Connecting App Store Connect…", detail: "Signing a short-lived token and fetching apps.", kind: .progress)
+        showToast(
+            "Connecting App Store Connect…",
+            detail: "Signing a short-lived token and fetching your iOS apps. Large accounts can take a few minutes.",
+            kind: .progress
+        )
         let apps = try await AppStoreConnectClient(credentials: credentials).listApps()
         try CredentialStore.saveApple(credentials)
         prepareLiveWorkspace()

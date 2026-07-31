@@ -22,9 +22,10 @@ not include bulk locale operations, remote regional-price application, reusable
 release-note templates, AI review drafting, or Google Play bundle/release
 creation. The interface presents Community actions directly and does not show
 disabled commercial controls. It may describe those separately shipped
-workflows at the relevant Community boundary and link to the official download.
-These prompts must remain plain informational links: they must not introduce
-entitlement state, executable operation hooks, or dormant commercial code.
+workflows at the relevant Community boundary and present active buttons that
+open an informational Pro sheet or the official download page. Those controls
+must not introduce entitlement state, executable operation hooks, or dormant
+commercial code.
 
 The official signed distribution provides those additional maintained workflows,
 licence management, signed automatic updates, support, and installation

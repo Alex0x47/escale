@@ -77,6 +77,12 @@ public struct OverviewView: View {
                         )
                     }
                     releasePanel(app)
+                    if app.playStoreApp != nil {
+                        OfficialDistributionCallout(
+                            title: "Ship Android releases from Escale",
+                            detail: "The official distribution uploads Android App Bundles and creates Google Play releases from the same workspace."
+                        )
+                    }
                 }
             }
             .padding(28)

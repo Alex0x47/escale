@@ -314,6 +314,10 @@ public struct PricingView: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(store.calculatingProductIDs.contains(product.wrappedValue.id))
+            OfficialDistributionCallout(
+                title: "Apply approved prices automatically",
+                detail: "Preview and review suggestions here, then use the official distribution to write regional prices to App Store Connect and Google Play."
+            )
         }
         .padding(22)
         .background(Theme.sidebar.opacity(0.6))

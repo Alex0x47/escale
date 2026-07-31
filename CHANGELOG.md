@@ -2,6 +2,11 @@
 
 All notable changes to Escale Community are documented here.
 
+## Unreleased
+
+- Added contextual links to official-distribution workflows without restoring
+  commercial implementations, entitlements, or locked controls.
+
 ## 1.0.1 — 2026-07-31
 
 - Defined a strict Community-only source boundary and removed dormant

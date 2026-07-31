@@ -177,7 +177,13 @@ private struct ReviewDetail: View {
                     .background(.green.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.green.opacity(0.14)))
                 } else {
-                    replyComposer
+                    VStack(spacing: 14) {
+                        OfficialDistributionCallout(
+                            title: "Start with an AI-drafted reply",
+                            detail: "The official distribution can draft a response from the review. You stay in control and approve the final public reply."
+                        )
+                        replyComposer
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 10) {

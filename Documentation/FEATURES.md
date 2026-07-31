@@ -21,9 +21,13 @@ The Community implementation ends at those boundaries. In particular, it does
 not include bulk locale operations, remote regional-price application, reusable
 release-note templates, AI review drafting, or Google Play bundle/release
 creation. The interface presents Community actions directly and does not show
-disabled commercial controls.
+disabled commercial controls. It may describe those separately shipped
+workflows at the relevant Community boundary and link to the official download.
+These prompts must remain plain informational links: they must not introduce
+entitlement state, executable operation hooks, or dormant commercial code.
 
-The official signed distribution may advertise additional maintained workflows,
-but their implementation belongs outside this public source tree. Shared fixes
-should be extracted to a genuinely Community-usable API before they are added
-here. Planned ideas must not be presented as shipped features.
+The official signed distribution provides those additional maintained workflows,
+licence management, signed automatic updates, support, and installation
+convenience. Their implementation belongs outside this public source tree.
+Shared fixes should be extracted to a genuinely Community-usable API before they
+are added here. Planned ideas must not be presented as shipped features.

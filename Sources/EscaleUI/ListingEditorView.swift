@@ -340,6 +340,10 @@ public struct ListingEditorView: View {
                         PlatformBadge(platform: activeEditingPlatform)
                     }
                 }
+                OfficialDistributionCallout(
+                    title: "Localize every market in one pass",
+                    detail: "The official distribution adds all-locale translation and reusable What’s New templates, plus signed updates and support."
+                )
                 field(text: binding.title, limit: 30, axis: .horizontal, focus: .title, localization: localization)
                 if activeEditingPlatform == .appStore {
                     field(text: binding.subtitle, limit: limits.subtitle, axis: .horizontal, focus: .subtitle, localization: localization)

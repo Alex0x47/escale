@@ -152,12 +152,20 @@ public enum CredentialStore {
 
     private static func readMigrating(
         account: String,
-        accessible: CFString = kSecAttrAccessibleAfterFirstUnlock
+        accessible: CFString = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
     ) throws -> Data? {
-        if let data = try KeychainStore.read(service: service, account: account) {
+        if let data = try KeychainStore.read(
+            service: service,
+            account: account,
+            accessible: accessible
+        ) {
             return data
         }
-        guard let legacyData = try KeychainStore.read(service: legacyService, account: account) else {
+        guard let legacyData = try KeychainStore.read(
+            service: legacyService,
+            account: account,
+            accessible: accessible
+        ) else {
             return nil
         }
         try KeychainStore.save(
@@ -175,7 +183,7 @@ public enum KeychainStore {
         _ data: Data,
         service: String,
         account: String,
-        accessible: CFString = kSecAttrAccessibleAfterFirstUnlock
+        accessible: CFString = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
     ) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -197,7 +205,11 @@ public enum KeychainStore {
         }
     }
 
-    public static func read(service: String, account: String) throws -> Data? {
+    public static func read(
+        service: String,
+        account: String,
+        accessible: CFString = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+    ) throws -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -209,6 +221,21 @@ public enum KeychainStore {
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess, let data = item as? Data else { throw APIError.keychain(status) }
+
+        // Tighten items created by older Escale builds in place. Credentials
+        // and licence records must not be available while the Mac is locked,
+        // and must not migrate to another device through a backup.
+        let accessibilityStatus = SecItemUpdate(
+            [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account
+            ] as CFDictionary,
+            [kSecAttrAccessible as String: accessible] as CFDictionary
+        )
+        guard accessibilityStatus == errSecSuccess else {
+            throw APIError.keychain(accessibilityStatus)
+        }
         return data
     }
 

@@ -15,6 +15,7 @@
 
 <p align="center">
   <img alt="macOS 14+" src="https://img.shields.io/badge/macOS-14%2B-111111">
+  <img alt="Apple silicon" src="https://img.shields.io/badge/Mac-Apple%20silicon-555555">
   <img alt="Swift 6" src="https://img.shields.io/badge/Swift-6-F05138">
   <img alt="Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue">
 </p>
@@ -90,21 +91,21 @@ proprietary licensing and implementation. See
 ## Before using a production account
 
 > [!CAUTION]
-> **Escale is experimental software under active development. Use it at your own
-> risk and verify consequential changes in the official store console.**
+> **Escale can make consequential remote changes. Review them in Escale and
+> verify important results in the official store console.**
 
 Escale can remotely change public metadata, screenshots, prices, subscriber
 price behavior, releases, and review replies. Apple or Google API changes,
 incorrect permissions, defects, or user error can cause production impact.
 Use least-privilege credentials, keep copies of important metadata, and start
-with a non-critical app. There is no automatic rollback and no stable-release
-compatibility promise.
+with a non-critical app. There is no automatic rollback.
 
 The software is provided without warranty. See the
 [Apache-2.0 licence](LICENSE), especially its warranty and liability terms.
 
 ## Requirements
 
+- Apple silicon Mac (M1 or newer)
 - macOS 14 or newer
 - Xcode 16 or newer with the Command Line Tools
 - Swift 6

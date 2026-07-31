@@ -2,7 +2,7 @@
 
 All notable changes to Escale Community are documented here.
 
-## Unreleased
+## 1.0.2 — 2026-07-31
 
 - Added contextual callouts and feature entry points for official-distribution
   workflows. Community controls open an informational Pro sheet without

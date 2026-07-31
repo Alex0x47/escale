@@ -145,6 +145,7 @@ private struct ReviewDetail: View {
     let review: CustomerReview
     @State private var response = ""
     @State private var isSending = false
+    @State private var isDrafting = false
     @State private var officialDistributionFeature: OfficialDistributionFeature?
 
     var body: some View {
@@ -179,10 +180,12 @@ private struct ReviewDetail: View {
                     .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.green.opacity(0.14)))
                 } else {
                     VStack(spacing: 14) {
-                        OfficialDistributionCallout(
-                            title: "Start with an AI-drafted reply",
-                            detail: "The official distribution can draft a response from the review. You stay in control and approve the final public reply."
-                        )
+                        if !store.isDemoMode {
+                            OfficialDistributionCallout(
+                                title: "Start with an AI-drafted reply",
+                                detail: "The official distribution can draft a response from the review. You stay in control and approve the final public reply."
+                            )
+                        }
                         replyComposer
                     }
                 }
@@ -210,12 +213,30 @@ private struct ReviewDetail: View {
                 Text("Write a response").font(.headline)
                 Spacer()
                 Button {
-                    officialDistributionFeature = .draftReviewReplies
+                    guard store.isDemoMode else {
+                        officialDistributionFeature = .draftReviewReplies
+                        return
+                    }
+                    isDrafting = true
+                    Task {
+                        if let draft = await store.previewDemoReviewReply(reviewID: review.id) {
+                            response = draft
+                        }
+                        isDrafting = false
+                    }
                 } label: {
-                    Label("Draft with AI", systemImage: "sparkles")
+                    if isDrafting {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("Drafting…")
+                        }
+                    } else {
+                        Label("Draft with AI", systemImage: "sparkles")
+                    }
                 }
                 .buttonStyle(.bordered)
                 .tint(Theme.accent)
+                .disabled(isDrafting || isSending)
             }
             TextField("Thank the customer or offer help…", text: $response, axis: .vertical)
                 .textFieldStyle(.plain).lineLimit(5...10)

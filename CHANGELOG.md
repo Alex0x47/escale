@@ -9,6 +9,10 @@ All notable changes to Escale Community are documented here.
   restoring commercial implementations, entitlements, or operation hooks.
 - Clarified during App Store Connect setup that fetching iOS apps can take a few
   minutes for larger accounts.
+- Made the built-in demo an interactive Escale Pro preview with safe, local
+  simulations for bulk localization, templates, price application, AI replies,
+  and Android draft creation.
+- Added a prominent Leave demo workspace button above Feedback & requests.
 
 ## 1.0.1 — 2026-07-31
 

@@ -27,6 +27,11 @@ open an informational Pro sheet or the official download page. Those controls
 must not introduce entitlement state, executable operation hooks, or dormant
 commercial code.
 
+The built-in demo workspace is the exception at the presentation layer: it may
+simulate these workflows against bundled sample data so people can evaluate the
+official experience. Demo operations must be guarded by demo mode, must not use
+credentials or commercial remote APIs, and must never mutate a developer store.
+
 The official signed distribution provides those additional maintained workflows,
 licence management, signed automatic updates, support, and installation
 convenience. Their implementation belongs outside this public source tree.

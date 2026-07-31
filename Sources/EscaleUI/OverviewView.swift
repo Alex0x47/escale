@@ -8,6 +8,7 @@ public struct OverviewView: View {
     @State private var pairingRequest: AppPairingRequest?
     @State private var newIOSVersionRequest: NewIOSVersionRequest?
     @State private var officialDistributionFeature: OfficialDistributionFeature?
+    @State private var showingDemoAndroidVersion = false
 
     private var localizationHealth: String {
         guard !store.selectedLocalizations.isEmpty else { return "—" }
@@ -78,7 +79,7 @@ public struct OverviewView: View {
                         )
                     }
                     releasePanel(app)
-                    if app.playStoreApp != nil {
+                    if app.playStoreApp != nil, !store.isDemoMode {
                         OfficialDistributionCallout(
                             title: "Ship Android releases from Escale",
                             detail: "The official distribution uploads Android App Bundles and creates Google Play releases from the same workspace."
@@ -101,6 +102,10 @@ public struct OverviewView: View {
         }
         .sheet(item: $officialDistributionFeature) { feature in
             OfficialDistributionFeatureSheet(feature: feature)
+        }
+        .sheet(isPresented: $showingDemoAndroidVersion) {
+            DemoAndroidVersionSheet()
+                .environmentObject(store)
         }
     }
 
@@ -164,7 +169,11 @@ public struct OverviewView: View {
             }
             if app.playStoreApp != nil {
                 Button {
-                    officialDistributionFeature = .uploadGooglePlayBundle
+                    if store.isDemoMode {
+                        showingDemoAndroidVersion = true
+                    } else {
+                        officialDistributionFeature = .uploadGooglePlayBundle
+                    }
                 } label: {
                     Label("New Android version", systemImage: "shippingbox.fill")
                 }

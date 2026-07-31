@@ -88,7 +88,14 @@ public enum SampleData {
             ],
             screenshotsByApp: [appID: screenshots()],
             productsByApp: [appID: products()],
-            reviewsByApp: [appID: reviews()]
+            reviewsByApp: [appID: reviews()],
+            googlePlayReleaseNotesByApp: [
+                appID: """
+                <en-US>
+                A calmer writing experience, smarter weekly insights, and faster sync across devices.
+                </en-US>
+                """
+            ]
         )
     }
 
@@ -123,6 +130,27 @@ public enum SampleData {
                 keywords: "", releaseNotes: "", dirtyPlatforms: [], lastSaved: nil, appleVersionLocalizationID: nil, appleAppInfoLocalizationID: nil, googleLanguage: "ja-JP"
             )
         ]
+    }
+
+    static func proPreviewLocalizations() -> [ListingLocalization] {
+        localizations().map { localization in
+            var result = localization
+            switch canonicalStoreLocale(localization.locale) {
+            case "de":
+                result.promotionalText = "Verwandle tägliche Gedanken in spürbaren Fortschritt – mit einem privaten Journal für mehr Klarheit."
+                result.description = "Northstar ist dein ruhiger Ort für tägliches Journaling, geführte Reflexion und achtsame Ziele. Halte Gedanken in Sekunden fest, erkenne Muster und bewahre deine Reise privat auf allen Geräten."
+                result.keywords = "journal,tagebuch,achtsamkeit,gewohnheiten,reflexion,ziele"
+                result.releaseNotes = "Ein ruhigeres Schreiberlebnis, intelligentere Wochenrückblicke und schnellere Synchronisierung."
+            case "ja":
+                result.promotionalText = "毎日の小さな振り返りを、確かな成長へ。心を整えるプライベートなジャーナルです。"
+                result.description = "Northstarは、日々の記録、ガイド付きの振り返り、目標管理のための静かな場所です。思いをすぐに残し、変化を見つけながら、すべてのデバイスで安全に保管できます。"
+                result.keywords = "日記,ジャーナル,マインドフルネス,習慣,振り返り,目標"
+                result.releaseNotes = "より落ち着いた書き心地、週間インサイト、デバイス間の高速同期を追加しました。"
+            default:
+                break
+            }
+            return result
+        }
     }
 
     public static func screenshots() -> [StoreScreenshot] {

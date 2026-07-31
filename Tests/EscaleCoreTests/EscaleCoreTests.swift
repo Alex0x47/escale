@@ -46,6 +46,17 @@ func linkedStoreIdentifiers() {
     #expect(app?.linkedCount == 2)
 }
 
+@Test("Pro demo translation completes sample locales without pre-filling the baseline")
+func proDemoTranslationSamples() throws {
+    let baseline = SampleData.localizations()
+    let preview = SampleData.proPreviewLocalizations()
+    let baselineGerman = try #require(baseline.first(where: { $0.locale == "de-DE" }))
+    let previewGerman = try #require(preview.first(where: { $0.locale == "de-DE" }))
+
+    #expect(baselineGerman.completion < 0.5)
+    #expect(previewGerman.completion == 1)
+}
+
 @Test("Store rating summaries combine using rating counts")
 func combinedStoreRatings() {
     let summary = combinedStoreRatingSummary([

@@ -319,7 +319,13 @@ public struct PricingView: View {
             .buttonStyle(.bordered)
             .disabled(store.calculatingProductIDs.contains(product.wrappedValue.id))
             Button {
-                officialDistributionFeature = .applyRegionalPricing
+                if store.isDemoMode {
+                    Task {
+                        await store.previewDemoApplyRegionalPricing(productID: product.wrappedValue.id)
+                    }
+                } else {
+                    officialDistributionFeature = .applyRegionalPricing
+                }
             } label: {
                 Label("Apply new pricing", systemImage: "arrow.up.circle.fill")
                     .frame(maxWidth: .infinity)
@@ -327,10 +333,12 @@ public struct PricingView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .tint(Theme.accent)
-            OfficialDistributionCallout(
-                title: "Apply approved prices automatically",
-                detail: "Preview and review suggestions here, then use the official distribution to write regional prices to App Store Connect and Google Play."
-            )
+            if !store.isDemoMode {
+                OfficialDistributionCallout(
+                    title: "Apply approved prices automatically",
+                    detail: "Preview and review suggestions here, then use the official distribution to write regional prices to App Store Connect and Google Play."
+                )
+            }
         }
         .padding(22)
         .background(Theme.sidebar.opacity(0.6))

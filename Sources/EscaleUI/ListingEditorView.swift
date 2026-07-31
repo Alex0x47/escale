@@ -14,7 +14,9 @@ public struct ListingEditorView: View {
     @State private var isSavingLocalizations = false
     @State private var translatingFields: Set<ListingMetadataField> = []
     @State private var isTranslatingPlayReleaseNotes = false
+    @State private var isDemoTranslatingAll = false
     @State private var officialDistributionFeature: OfficialDistributionFeature?
+    @State private var demoTemplateTarget: DemoReleaseNoteTemplateTarget?
 
     public var body: some View {
         HSplitView {
@@ -44,6 +46,16 @@ public struct ListingEditorView: View {
         }
         .sheet(item: $officialDistributionFeature) { feature in
             OfficialDistributionFeatureSheet(feature: feature)
+        }
+        .sheet(item: $demoTemplateTarget) { target in
+            DemoReleaseNoteTemplatesSheet { text in
+                switch target {
+                case .listing(let localizationID, let platforms):
+                    store.applyDemoReleaseNoteTemplate(text, to: localizationID, platforms: platforms)
+                case .googlePlay(let locale):
+                    store.applyDemoGooglePlayReleaseNoteTemplate(text, locale: locale)
+                }
+            }
         }
     }
 
@@ -259,12 +271,28 @@ public struct ListingEditorView: View {
                 }
                 Spacer()
                 Button {
-                    officialDistributionFeature = .bulkTranslations
+                    guard store.isDemoMode else {
+                        officialDistributionFeature = .bulkTranslations
+                        return
+                    }
+                    isDemoTranslatingAll = true
+                    Task {
+                        await store.previewDemoBulkTranslation(platforms: activeEditingPlatforms)
+                        isDemoTranslatingAll = false
+                    }
                 } label: {
-                    Label("Translate all locales", systemImage: "character.book.closed.fill")
+                    if isDemoTranslatingAll {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text("Translating all…")
+                        }
+                    } else {
+                        Label("Translate all locales", systemImage: "character.book.closed.fill")
+                    }
                 }
                 .buttonStyle(.bordered)
                 .tint(Theme.accent)
+                .disabled(isDemoTranslatingAll || isTranslating || !translatingFields.isEmpty)
                 .help("Translate the complete primary listing into every locale with Escale Pro")
                 Button {
                     guard let source = primaryLocalization else { return }
@@ -352,10 +380,12 @@ public struct ListingEditorView: View {
                         PlatformBadge(platform: activeEditingPlatform)
                     }
                 }
-                OfficialDistributionCallout(
-                    title: "Localize every market in one pass",
-                    detail: "The official distribution adds all-locale translation and reusable What’s New templates, plus signed updates and support."
-                )
+                if !store.isDemoMode {
+                    OfficialDistributionCallout(
+                        title: "Localize every market in one pass",
+                        detail: "The official distribution adds all-locale translation and reusable What’s New templates, plus signed updates and support."
+                    )
+                }
                 field(text: binding.title, limit: 30, axis: .horizontal, focus: .title, localization: localization)
                 if activeEditingPlatform == .appStore {
                     field(text: binding.subtitle, limit: limits.subtitle, axis: .horizontal, focus: .subtitle, localization: localization)
@@ -406,7 +436,15 @@ public struct ListingEditorView: View {
                 Spacer()
                 Button {
                     if isPrimary {
-                        officialDistributionFeature = .bulkTranslations
+                        guard store.isDemoMode else {
+                            officialDistributionFeature = .bulkTranslations
+                            return
+                        }
+                        isTranslatingPlayReleaseNotes = true
+                        Task {
+                            await store.previewDemoGooglePlayReleaseNotesTranslation()
+                            isTranslatingPlayReleaseNotes = false
+                        }
                         return
                     }
                     guard !sourceLocale.isEmpty else { return }
@@ -441,7 +479,7 @@ public struct ListingEditorView: View {
                         || primary == nil
                 )
                 Button {
-                    officialDistributionFeature = .releaseNoteTemplates
+                    openReleaseNoteTemplates(forGooglePlayLocale: locale)
                 } label: {
                     Label("Templates", systemImage: "doc.on.doc.fill")
                 }
@@ -553,7 +591,7 @@ public struct ListingEditorView: View {
                 Spacer()
                 if focus == .releaseNotes {
                     Button {
-                        officialDistributionFeature = .releaseNoteTemplates
+                        openReleaseNoteTemplates(for: localization)
                     } label: {
                         Label("Templates", systemImage: "doc.on.doc.fill")
                     }
@@ -599,7 +637,15 @@ public struct ListingEditorView: View {
         let hasTargets = displayedLocalizations.contains(where: { $0.id != localization.id })
         return Button {
             if isPrimary {
-                officialDistributionFeature = .bulkTranslations
+                guard store.isDemoMode else {
+                    officialDistributionFeature = .bulkTranslations
+                    return
+                }
+                translatingFields.insert(field)
+                Task {
+                    await store.previewDemoBulkTranslation(field: field, platforms: activeEditingPlatforms)
+                    translatingFields.remove(field)
+                }
                 return
             }
             guard let primary else { return }
@@ -645,6 +691,22 @@ public struct ListingEditorView: View {
         )
     }
 
+    private func openReleaseNoteTemplates(for localization: ListingLocalization) {
+        if store.isDemoMode {
+            demoTemplateTarget = .listing(localization.id, activeEditingPlatforms)
+        } else {
+            officialDistributionFeature = .releaseNoteTemplates
+        }
+    }
+
+    private func openReleaseNoteTemplates(forGooglePlayLocale locale: String) {
+        if store.isDemoMode {
+            demoTemplateTarget = .googlePlay(locale)
+        } else {
+            officialDistributionFeature = .releaseNoteTemplates
+        }
+    }
+
     private func storePreview(localization: ListingLocalization) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -686,5 +748,19 @@ public struct ListingEditorView: View {
             }
         }
         .background(Color.primary.opacity(0.025))
+    }
+}
+
+private enum DemoReleaseNoteTemplateTarget: Identifiable {
+    case listing(UUID, Set<StorePlatform>)
+    case googlePlay(String)
+
+    var id: String {
+        switch self {
+        case .listing(let localizationID, let platforms):
+            "listing-\(localizationID.uuidString)-\(platforms.map(\.rawValue).sorted().joined())"
+        case .googlePlay(let locale):
+            "google-\(locale)"
+        }
     }
 }

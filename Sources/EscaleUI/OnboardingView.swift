@@ -596,18 +596,24 @@ public struct SettingsView: View {
                         .frame(width: 38, height: 38)
                         .background(Color.secondary, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Escale Community")
+                        Text(store.isDemoMode ? "Escale Pro demo" : "Escale Community")
                             .font(.subheadline.weight(.semibold))
-                        Text("Free and open source under Apache-2.0, with manual store workflows and single-locale AI translation.")
+                        Text(
+                            store.isDemoMode
+                                ? "Interactive Pro workflow preview using built-in sample data. No developer account is modified."
+                                : "Free and open source under Apache-2.0, with manual store workflows and single-locale AI translation."
+                        )
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Link(destination: EscaleLinks.officialDownloadPage) {
-                        Label("Official signed app", systemImage: "arrow.down.circle.fill")
+                    if !store.isDemoMode {
+                        Link(destination: EscaleLinks.officialDownloadPage) {
+                            Label("Official signed app", systemImage: "arrow.down.circle.fill")
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
                 }
                 .padding(14)
                 .cardStyle(cornerRadius: 13)

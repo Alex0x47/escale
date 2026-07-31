@@ -247,6 +247,172 @@ public final class WorkspaceStore: ObservableObject {
         isOnboardingPresented = true
     }
 
+    public func previewDemoBulkTranslation(
+        field: ListingMetadataField? = nil,
+        platforms requestedPlatforms: Set<StorePlatform>
+    ) async {
+        guard isDemoMode,
+              let appID = selectedAppID,
+              let app = selectedApp else { return }
+        let platforms = requestedPlatforms.intersection(availablePlatforms(for: appID))
+        guard !platforms.isEmpty else { return }
+        let storedLocalizations = workspace.localizationsByApp[appID, default: []]
+        guard let primary = primaryLocalization(
+            in: storedLocalizations.map { listingLocalization($0, displaying: platforms) },
+            preferredLocale: app.appStoreApp?.primaryLocale ?? app.playStoreApp?.primaryLocale
+        ) else { return }
+        let targetIndices = storedLocalizations.indices.filter {
+            storedLocalizations[$0].id != primary.id
+        }
+        guard !targetIndices.isEmpty else {
+            showToast("No target locales", detail: "Add another listing language to preview bulk translation.", kind: .neutral)
+            return
+        }
+
+        let operation = field.map { "Translating \($0.displayName.lowercased())…" } ?? "Translating all locales…"
+        showToast(operation, detail: "Running the Escale Pro workflow against demo data only.", kind: .progress)
+        try? await Task.sleep(for: .milliseconds(650))
+
+        let samples = Dictionary(
+            uniqueKeysWithValues: SampleData.proPreviewLocalizations().map {
+                (canonicalStoreLocale($0.locale), $0)
+            }
+        )
+        for index in targetIndices {
+            let stored = workspace.localizationsByApp[appID]![index]
+            guard var sample = samples[canonicalStoreLocale(stored.locale)] else { continue }
+            sample.title = stored.title.isEmpty ? app.name : stored.title
+            var displayed = listingLocalization(stored, displaying: platforms)
+            let sampleDisplay = listingLocalization(sample, displaying: platforms)
+            if let field {
+                field.set(field.value(in: sampleDisplay), in: &displayed)
+            } else {
+                displayed.title = sampleDisplay.title
+                displayed.subtitle = sampleDisplay.subtitle
+                displayed.shortDescription = sampleDisplay.shortDescription
+                displayed.promotionalText = sampleDisplay.promotionalText
+                displayed.description = sampleDisplay.description
+                displayed.keywords = sampleDisplay.keywords
+                displayed.releaseNotes = sampleDisplay.releaseNotes
+            }
+            var updated = applyingListingMetadata(from: displayed, to: stored, platforms: platforms)
+            updated.dirtyPlatforms.formUnion(platforms)
+            workspace.localizationsByApp[appID]?[index] = updated
+        }
+        persist()
+        showToast(
+            field.map { "\($0.displayName) translated" } ?? "All locales translated",
+            detail: "Updated \(targetIndices.count) demo locale\(targetIndices.count == 1 ? "" : "s"). Review the generated copy before publishing.",
+            kind: .success
+        )
+    }
+
+    public func previewDemoGooglePlayReleaseNotesTranslation() async {
+        guard isDemoMode, let appID = selectedAppID else { return }
+        let localizations = workspace.localizationsByApp[appID, default: []]
+        let samples = Dictionary(
+            uniqueKeysWithValues: SampleData.proPreviewLocalizations().map {
+                (canonicalStoreLocale($0.locale), $0.releaseNotes)
+            }
+        )
+        let targets = localizations.filter {
+            canonicalStoreLocale($0.googleLanguage ?? $0.locale) != "en-us"
+        }
+        showToast("Translating release notes…", detail: "Running the all-locale workflow against demo data only.", kind: .progress)
+        try? await Task.sleep(for: .milliseconds(600))
+        for target in targets {
+            let locale = target.googleLanguage ?? target.locale
+            guard let text = samples[canonicalStoreLocale(locale)], !text.isEmpty else { continue }
+            setGooglePlayReleaseNote(text, locale: locale)
+        }
+        persist()
+        showToast("Release notes translated", detail: "The tagged demo block now contains every sample locale.", kind: .success)
+    }
+
+    public func applyDemoReleaseNoteTemplate(
+        _ text: String,
+        to localizationID: UUID,
+        platforms: Set<StorePlatform>
+    ) {
+        guard isDemoMode,
+              let appID = selectedAppID,
+              let index = workspace.localizationsByApp[appID]?.firstIndex(where: { $0.id == localizationID }) else { return }
+        let stored = workspace.localizationsByApp[appID]![index]
+        var displayed = listingLocalization(stored, displaying: platforms)
+        displayed.releaseNotes = text
+        var updated = applyingListingMetadata(from: displayed, to: stored, platforms: platforms)
+        updated.dirtyPlatforms.formUnion(platforms)
+        workspace.localizationsByApp[appID]?[index] = updated
+        persist()
+        showToast("Template applied", detail: "The demo release notes are ready for editing.", kind: .success)
+    }
+
+    public func applyDemoGooglePlayReleaseNoteTemplate(_ text: String, locale: String) {
+        guard isDemoMode else { return }
+        setGooglePlayReleaseNote(text, locale: locale)
+        persist()
+        showToast("Template applied", detail: "The demo Google Play release note is ready for editing.", kind: .success)
+    }
+
+    public func previewDemoApplyRegionalPricing(productID: UUID) async {
+        guard isDemoMode,
+              let appID = selectedAppID,
+              let productIndex = workspace.productsByApp[appID]?.firstIndex(where: { $0.id == productID }) else { return }
+        let marketCount = workspace.productsByApp[appID]![productIndex].regions.count
+        showToast("Applying regional pricing…", detail: "Updating \(marketCount) markets in the demo workspace only.", kind: .progress)
+        try? await Task.sleep(for: .milliseconds(700))
+        for index in workspace.productsByApp[appID]![productIndex].regions.indices {
+            workspace.productsByApp[appID]![productIndex].regions[index].currentPrice =
+                workspace.productsByApp[appID]![productIndex].regions[index].suggestedPrice
+        }
+        persist()
+        showToast("Regional pricing applied", detail: "All demo market prices now match the reviewed suggestions.", kind: .success)
+    }
+
+    public func previewDemoReviewReply(reviewID: UUID) async -> String? {
+        guard isDemoMode,
+              let appID = selectedAppID,
+              let review = workspace.reviewsByApp[appID]?.first(where: { $0.id == reviewID }) else { return nil }
+        showToast("Drafting a reply…", detail: "Generating an editable response from the demo review.", kind: .progress)
+        try? await Task.sleep(for: .milliseconds(650))
+        let draft: String
+        if review.rating <= 3 {
+            draft = "Thanks for flagging this, \(review.author). We’re sorry the experience fell short. Please contact our support team so we can investigate and help make this right."
+        } else {
+            draft = "Thanks for the thoughtful feedback, \(review.author)! We’re glad Northstar is helping, and we’ve shared your suggestion with the team."
+        }
+        showToast("AI draft ready", detail: "Review and edit the response before sending it.", kind: .success)
+        return draft
+    }
+
+    public func previewDemoGooglePlayDraft(
+        versionCode: String,
+        releaseName: String,
+        track: String
+    ) async -> Bool {
+        guard isDemoMode,
+              let appID = selectedAppID,
+              let appIndex = workspace.apps.firstIndex(where: { $0.id == appID }),
+              var android = workspace.apps[appIndex].playStoreApp else { return false }
+        showToast("Uploading demo bundle…", detail: "Validating the package, signing key, and version code.", kind: .progress)
+        try? await Task.sleep(for: .milliseconds(800))
+        android.version = "build \(versionCode)"
+        android.state = .draft
+        android.remoteState = "draft"
+        android.versionDetails = StoreVersionDetails(
+            track: track,
+            releaseName: releaseName,
+            versionCodes: [versionCode],
+            releaseNotes: googlePlayReleaseNotes(in: selectedGooglePlayReleaseNotesBlock).map {
+                StoreVersionReleaseNote(language: $0.locale, text: $0.text)
+            }
+        )
+        workspace.apps[appIndex].playStoreApp = android
+        persist()
+        showToast("Android draft created", detail: "The simulated \(track) release is ready. Nothing was uploaded to Google Play.", kind: .success)
+        return true
+    }
+
     public func resetOnboarding() {
         UserDefaults.standard.set(false, forKey: onboardingKey)
         isOnboardingPresented = true

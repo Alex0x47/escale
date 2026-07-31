@@ -12,6 +12,7 @@ public struct SidebarView: View {
     @State private var selectedStoreVersion: StoreApp?
     @State private var newIOSVersionRequest: NewIOSVersionRequest?
     @State private var officialDistributionFeature: OfficialDistributionFeature?
+    @State private var showingDemoAndroidVersion = false
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -29,6 +30,28 @@ public struct SidebarView: View {
                     }
                     .buttonStyle(.plain)
                     .help("Connections and settings")
+                }
+
+                if store.isDemoMode {
+                    Button {
+                        store.leaveDemoMode()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "rectangle.portrait.and.arrow.right")
+                            Text("Leave demo workspace")
+                            Spacer()
+                            Image(systemName: "chevron.right")
+                                .font(.caption2.weight(.bold))
+                        }
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 10)
+                        .background(.orange, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Leave demo data and return to Escale setup")
                 }
 
                 Link(destination: URL(string: "https://litefeedback.com/roadmap/Escale")!) {
@@ -88,7 +111,11 @@ public struct SidebarView: View {
                             VStack(spacing: 4) {
                                 StoreVersionRow(app: android) { selectedStoreVersion = android }
                                 NewStoreVersionButton(platform: .playStore) {
-                                    officialDistributionFeature = .uploadGooglePlayBundle
+                                    if store.isDemoMode {
+                                        showingDemoAndroidVersion = true
+                                    } else {
+                                        officialDistributionFeature = .uploadGooglePlayBundle
+                                    }
                                 }
                                 .help("Upload a signed bundle and create a Google Play draft with Escale Pro")
                             }
@@ -168,6 +195,10 @@ public struct SidebarView: View {
         }
         .sheet(item: $officialDistributionFeature) { feature in
             OfficialDistributionFeatureSheet(feature: feature)
+        }
+        .sheet(isPresented: $showingDemoAndroidVersion) {
+            DemoAndroidVersionSheet()
+                .environmentObject(store)
         }
     }
 

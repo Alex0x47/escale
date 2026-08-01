@@ -185,7 +185,11 @@ public struct ListingEditorView: View {
             Menu {
                 ForEach(supportedLocales, id: \.code) { item in
                     Button(item.name) {
-                        store.addLocalization(locale: item.code, language: item.name)
+                        store.addLocalization(
+                            locale: item.code,
+                            language: item.name,
+                            platforms: activeEditingPlatforms
+                        )
                         selectedLocalizationID = displayedLocalizations.first(where: { $0.locale == item.code })?.id
                     }
                     .disabled(displayedLocalizations.contains(where: { $0.locale == item.code }))

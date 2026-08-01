@@ -144,7 +144,10 @@ public final class WorkspaceStore: ObservableObject {
         localizations(displaying: selectedEditingPlatforms)
     }
     public func localizations(displaying platforms: Set<StorePlatform>) -> [ListingLocalization] {
-        return (selectedAppID.flatMap { workspace.localizationsByApp[$0] } ?? [])
+        storeListingLocalizations(
+            selectedAppID.flatMap { workspace.localizationsByApp[$0] } ?? [],
+            displaying: platforms
+        )
             .map { listingLocalization($0, displaying: platforms) }
     }
     public var selectedScreenshots: [StoreScreenshot] { selectedAppID.flatMap { workspace.screenshotsByApp[$0] } ?? [] }
@@ -202,7 +205,10 @@ public final class WorkspaceStore: ObservableObject {
     }
     public var selectedGooglePrimaryLocalization: ListingLocalization? {
         guard let appID = selectedAppID else { return nil }
-        let localizations = workspace.localizationsByApp[appID, default: []]
+        let localizations = storeListingLocalizations(
+            workspace.localizationsByApp[appID, default: []],
+            displaying: [.playStore]
+        )
             .map { listingLocalization($0, displaying: [.playStore]) }
         return primaryLocalization(
             in: localizations,
@@ -309,7 +315,10 @@ public final class WorkspaceStore: ObservableObject {
 
     public func previewDemoGooglePlayReleaseNotesTranslation() async {
         guard isDemoMode, let appID = selectedAppID else { return }
-        let localizations = workspace.localizationsByApp[appID, default: []]
+        let localizations = storeListingLocalizations(
+            workspace.localizationsByApp[appID, default: []],
+            displaying: [.playStore]
+        )
         let samples = Dictionary(
             uniqueKeysWithValues: SampleData.proPreviewLocalizations().map {
                 (canonicalStoreLocale($0.locale), $0.releaseNotes)
@@ -717,7 +726,10 @@ public final class WorkspaceStore: ObservableObject {
             return
         }
 
-        let localizations = workspace.localizationsByApp[appID, default: []]
+        let localizations = storeListingLocalizations(
+            workspace.localizationsByApp[appID, default: []],
+            displaying: [.playStore]
+        )
         let targets = localizations.filter { localization in
             let locale = googlePlayReleaseNoteLocale(for: localization)
             guard canonicalStoreLocale(locale) != canonicalStoreLocale(sourceLocale) else { return false }
@@ -813,28 +825,57 @@ public final class WorkspaceStore: ObservableObject {
 
     private func googlePlayReleaseNoteLocales(appID: UUID) -> [String] {
         var seen: Set<String> = []
-        return workspace.localizationsByApp[appID, default: []].compactMap { localization in
+        return storeListingLocalizations(
+            workspace.localizationsByApp[appID, default: []],
+            displaying: [.playStore]
+        ).compactMap { localization in
             let locale = googlePlayReleaseNoteLocale(for: localization)
             return seen.insert(canonicalStoreLocale(locale)).inserted ? locale : nil
         }
     }
 
-    public func addLocalization(locale: String, language: String) {
-        guard let appID = selectedAppID,
-              workspace.localizationsByApp[appID]?.contains(where: { $0.locale.caseInsensitiveCompare(locale) == .orderedSame }) != true else { return }
+    public func addLocalization(
+        locale: String,
+        language: String,
+        platforms requestedPlatforms: Set<StorePlatform>
+    ) {
+        guard let appID = selectedAppID else { return }
+        let platforms = requestedPlatforms.intersection(availablePlatforms(for: appID))
+        guard !platforms.isEmpty else { return }
+
+        if let index = workspace.localizationsByApp[appID]?.firstIndex(where: {
+            canonicalStoreLocale($0.locale) == canonicalStoreLocale(locale)
+        }) {
+            var localization = workspace.localizationsByApp[appID]![index]
+            let addedPlatforms = platforms.subtracting(localization.listingPlatforms)
+            guard !addedPlatforms.isEmpty else { return }
+            if addedPlatforms.contains(.playStore), localization.googleLanguage == nil {
+                localization.googleLanguage = googleLocale(forAppleLocale: locale)
+            }
+            localization.platforms = localization.listingPlatforms.union(addedPlatforms)
+            localization.dirtyPlatforms.formUnion(addedPlatforms)
+            localization.lastSaved = nil
+            workspace.localizationsByApp[appID]?[index] = localization
+            persist()
+            showToast("Localization added", detail: "Complete the \(language) copy, then publish it to the selected store.", kind: .success)
+            return
+        }
+
         let source = workspace.localizationsByApp[appID]?.first(where: { $0.locale.lowercased().hasPrefix("en") })
         let localization = ListingLocalization(
             id: UUID(), locale: locale, language: language,
             title: source?.title ?? selectedApp?.name ?? "", subtitle: "", promotionalText: "", description: "", keywords: "", releaseNotes: "",
-            dirtyPlatforms: availablePlatforms(for: appID), lastSaved: nil,
-            appleVersionLocalizationID: nil, appleAppInfoLocalizationID: nil, googleLanguage: googleLocale(forAppleLocale: locale),
-            googleTitle: source?.googleTitle ?? source?.title ?? selectedApp?.name ?? "",
+            dirtyPlatforms: platforms, lastSaved: nil,
+            appleVersionLocalizationID: nil, appleAppInfoLocalizationID: nil,
+            googleLanguage: platforms.contains(.playStore) ? googleLocale(forAppleLocale: locale) : nil,
+            googleTitle: platforms.contains(.playStore) ? source?.googleTitle ?? source?.title ?? selectedApp?.name ?? "" : nil,
             googleSubtitle: "",
-            googleDescription: ""
+            googleDescription: "",
+            platforms: platforms
         )
         workspace.localizationsByApp[appID, default: []].append(localization)
         persist()
-        showToast("Localization added", detail: "Complete the \(language) copy, then publish it to the stores.", kind: .success)
+        showToast("Localization added", detail: "Complete the \(language) copy, then publish it to the selected store.", kind: .success)
     }
 
     public func translateLocalization(id: UUID, from sourceID: UUID) async {
@@ -1062,7 +1103,10 @@ public final class WorkspaceStore: ObservableObject {
     public func saveEditedLocalizations(platforms requestedPlatforms: Set<StorePlatform>) async {
         guard let appID = selectedAppID else { return }
         let localizationIDs = workspace.localizationsByApp[appID, default: []]
-            .filter { !$0.dirtyPlatforms.isDisjoint(with: requestedPlatforms) }
+            .filter {
+                !$0.dirtyPlatforms.isDisjoint(with: requestedPlatforms)
+                    && !$0.listingPlatforms.isDisjoint(with: requestedPlatforms)
+            }
             .map(\.id)
         guard !localizationIDs.isEmpty else {
             showToast("Everything is up to date", detail: "No local changes to publish.", kind: .neutral)
@@ -1081,7 +1125,9 @@ public final class WorkspaceStore: ObservableObject {
         guard let app = workspace.apps.first(where: { $0.id == appID }),
               let index = workspace.localizationsByApp[appID]?.firstIndex(where: { $0.id == id }) else { return }
         var localization = workspace.localizationsByApp[appID]![index]
-        let targets = localization.dirtyPlatforms.intersection(requestedPlatforms)
+        let targets = localization.dirtyPlatforms
+            .intersection(requestedPlatforms)
+            .intersection(localization.listingPlatforms)
         guard !targets.isEmpty else {
             showToast("Everything is up to date", detail: "No local changes to publish.", kind: .neutral)
             return
@@ -2373,6 +2419,7 @@ public final class WorkspaceStore: ObservableObject {
             if let index = workspace.localizationsByApp[appID, default: []].firstIndex(where: { canonicalStoreLocale($0.locale) == canonicalStoreLocale(remote.locale) }) {
                 var local = workspace.localizationsByApp[appID]![index]
                 if local.dirtyPlatforms.contains(platform) { continue }
+                local.platforms = local.listingPlatforms.union([platform])
                 if platform == .appStore {
                     local.title = remote.title
                     local.subtitle = remote.subtitle
@@ -2603,6 +2650,9 @@ public func localizationsAfterCreatingAppStoreVersion(
 ) -> [ListingLocalization] {
     var result = cached.map { localization in
         var copy = localization
+        if copy.platforms == nil {
+            copy.platforms = copy.listingPlatforms
+        }
         copy.appleVersionLocalizationID = nil
         return copy
     }

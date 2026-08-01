@@ -223,6 +223,52 @@ func localeCanonicalization() {
     #expect(googleLocale(forAppleLocale: "ja") == "ja-JP")
 }
 
+@Test("Store listing localizations are limited to the selected platform")
+func platformSpecificLocalizationLists() {
+    func localization(
+        locale: String,
+        appleID: String? = nil,
+        googleLanguage: String? = nil,
+        dirtyPlatforms: Set<StorePlatform> = [],
+        lastSaved: Date? = Date()
+    ) -> ListingLocalization {
+        ListingLocalization(
+            id: UUID(), locale: locale, language: locale, title: "Title", subtitle: "",
+            promotionalText: "", description: "", keywords: "", releaseNotes: "",
+            dirtyPlatforms: dirtyPlatforms, lastSaved: lastSaved,
+            appleVersionLocalizationID: appleID, appleAppInfoLocalizationID: nil,
+            googleLanguage: googleLanguage
+        )
+    }
+
+    let sharedEnglish = localization(locale: "en-US", appleID: "apple-en", googleLanguage: "en-US")
+    let appleSpanish = localization(locale: "es-MX", appleID: "apple-es-MX")
+    let googleSpanish = localization(locale: "es-419", googleLanguage: "es-419")
+    let pendingAppleGerman = localization(
+        locale: "de-DE",
+        dirtyPlatforms: [.appStore],
+        lastSaved: nil
+    )
+    let staleCrossStoreEdit = localization(
+        locale: "pt-BR",
+        googleLanguage: "pt-BR",
+        dirtyPlatforms: [.appStore]
+    )
+    let localizations = [
+        sharedEnglish, appleSpanish, googleSpanish, pendingAppleGerman, staleCrossStoreEdit
+    ]
+
+    let appStoreLocales = Set(
+        storeListingLocalizations(localizations, displaying: [.appStore]).map(\.locale)
+    )
+    let playStoreLocales = Set(
+        storeListingLocalizations(localizations, displaying: [.playStore]).map(\.locale)
+    )
+
+    #expect(appStoreLocales == ["en-US", "es-MX", "de-DE"])
+    #expect(playStoreLocales == ["en-US", "es-419", "pt-BR"])
+}
+
 @Test("Store primary locale drives the AI translation source")
 func primaryStoreLocalizationSelection() throws {
     let english = ListingLocalization(

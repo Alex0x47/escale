@@ -305,7 +305,8 @@ public struct GooglePlayClient: Sendable {
                 title: title, subtitle: "",
                 promotionalText: "", description: description, keywords: "", releaseNotes: "",
                 dirtyPlatforms: [], lastSaved: Date(), appleVersionLocalizationID: nil, appleAppInfoLocalizationID: nil,
-                googleLanguage: language, googleTitle: title, googleSubtitle: shortDescription, googleDescription: description
+                googleLanguage: language, googleTitle: title, googleSubtitle: shortDescription,
+                googleDescription: description, platforms: [.playStore]
             )
         }
     }

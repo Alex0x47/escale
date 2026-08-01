@@ -248,6 +248,9 @@ public struct ListingLocalization: Identifiable, Codable, Hashable, Sendable {
     public var googleTitle: String? = nil
     public var googleSubtitle: String? = nil
     public var googleDescription: String? = nil
+    /// Explicit membership for workspaces saved by platform-aware versions.
+    /// Older workspaces infer this from their remote identifiers below.
+    public var platforms: Set<StorePlatform>? = nil
 
     public var playStoreTitle: String {
         get { googleTitle ?? title }
@@ -262,6 +265,24 @@ public struct ListingLocalization: Identifiable, Codable, Hashable, Sendable {
     public var playStoreFullDescription: String {
         get { googleDescription ?? description }
         set { googleDescription = newValue }
+    }
+
+    /// The stores this localization belongs to. Remote identifiers are the
+    /// source of truth for synced localizations; unsaved localizations use
+    /// their dirty platforms until the stores assign those identifiers.
+    public var listingPlatforms: Set<StorePlatform> {
+        if let platforms { return platforms }
+        var platforms: Set<StorePlatform> = []
+        if appleVersionLocalizationID != nil || appleAppInfoLocalizationID != nil {
+            platforms.insert(.appStore)
+        }
+        if googleLanguage != nil {
+            platforms.insert(.playStore)
+        }
+        if lastSaved == nil || platforms.isEmpty {
+            platforms.formUnion(dirtyPlatforms)
+        }
+        return platforms
     }
 
     public var completion: Double {
@@ -280,6 +301,13 @@ public struct ListingLocalization: Identifiable, Codable, Hashable, Sendable {
         guard !values.isEmpty else { return 0 }
         return Double(values.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }.count) / Double(values.count)
     }
+}
+
+public func storeListingLocalizations(
+    _ localizations: [ListingLocalization],
+    displaying platforms: Set<StorePlatform>
+) -> [ListingLocalization] {
+    localizations.filter { !$0.listingPlatforms.isDisjoint(with: platforms) }
 }
 
 public enum ListingMetadataField: String, CaseIterable, Identifiable, Sendable {

@@ -108,7 +108,8 @@ public enum SampleData {
                 description: "Northstar is your calm space for daily journaling, guided reflection, and mindful goal setting. Capture thoughts in seconds, discover patterns over time, and keep your personal journey private across all your devices.",
                 keywords: "journal,diary,mindfulness,habits,reflection,goals",
                 releaseNotes: "A calmer writing experience, smarter weekly insights, and faster sync across devices.",
-                dirtyPlatforms: [], lastSaved: Date(), appleVersionLocalizationID: nil, appleAppInfoLocalizationID: nil, googleLanguage: "en-US"
+                dirtyPlatforms: [], lastSaved: Date(), appleVersionLocalizationID: nil, appleAppInfoLocalizationID: nil,
+                googleLanguage: "en-US", platforms: Set(StorePlatform.allCases)
             ),
             ListingLocalization(
                 id: UUID(), locale: "fr-FR", language: "French", title: "Northstar Journal",
@@ -117,17 +118,22 @@ public enum SampleData {
                 description: "Northstar est votre espace apaisant pour écrire, prendre du recul et avancer vers vos objectifs.",
                 keywords: "journal,intime,bien-être,habitudes,objectifs",
                 releaseNotes: "Une écriture plus fluide, de nouveaux bilans hebdomadaires et une synchronisation accélérée.",
-                dirtyPlatforms: [], lastSaved: Date(), appleVersionLocalizationID: nil, appleAppInfoLocalizationID: nil, googleLanguage: "fr-FR"
+                dirtyPlatforms: [], lastSaved: Date(), appleVersionLocalizationID: nil, appleAppInfoLocalizationID: nil,
+                googleLanguage: "fr-FR", platforms: Set(StorePlatform.allCases)
             ),
             ListingLocalization(
                 id: UUID(), locale: "de-DE", language: "German", title: "Northstar Journal",
                 subtitle: "Reflektieren. Wachsen.", promotionalText: "", description: "",
-                keywords: "", releaseNotes: "", dirtyPlatforms: [], lastSaved: nil, appleVersionLocalizationID: nil, appleAppInfoLocalizationID: nil, googleLanguage: "de-DE"
+                keywords: "", releaseNotes: "", dirtyPlatforms: [], lastSaved: nil,
+                appleVersionLocalizationID: nil, appleAppInfoLocalizationID: nil, googleLanguage: "de-DE",
+                platforms: Set(StorePlatform.allCases)
             ),
             ListingLocalization(
                 id: UUID(), locale: "ja-JP", language: "Japanese", title: "Northstar Journal",
                 subtitle: "振り返り、集中し、成長する。", promotionalText: "", description: "",
-                keywords: "", releaseNotes: "", dirtyPlatforms: [], lastSaved: nil, appleVersionLocalizationID: nil, appleAppInfoLocalizationID: nil, googleLanguage: "ja-JP"
+                keywords: "", releaseNotes: "", dirtyPlatforms: [], lastSaved: nil,
+                appleVersionLocalizationID: nil, appleAppInfoLocalizationID: nil, googleLanguage: "ja-JP",
+                platforms: Set(StorePlatform.allCases)
             )
         ]
     }

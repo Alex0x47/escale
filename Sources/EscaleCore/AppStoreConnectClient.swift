@@ -722,7 +722,8 @@ public struct AppStoreConnectClient: Sendable {
                 lastSaved: Date(),
                 appleVersionLocalizationID: version?.id,
                 appleAppInfoLocalizationID: info?.id,
-                googleLanguage: nil
+                googleLanguage: nil,
+                platforms: [.appStore]
             )
         }
     }

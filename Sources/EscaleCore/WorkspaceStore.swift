@@ -2130,6 +2130,11 @@ public final class WorkspaceStore: ObservableObject {
                 let client = AppStoreConnectClient(credentials: credentials)
                 let apps = try await client.listApps()
                 importApps(apps)
+                updateConnection(
+                    .appStore,
+                    name: "App Store Connect",
+                    detail: "Issuer \(credentials.issuerID.suffix(6)) · \(apps.count) apps"
+                )
                 for app in apps {
                     do {
                         let snapshot = try await client.fetchSnapshot(for: app)

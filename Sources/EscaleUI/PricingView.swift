@@ -233,8 +233,18 @@ public struct PricingView: View {
                         .font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 90, alignment: .trailing)
                     Text("\(region.wrappedValue.currentPrice, specifier: "%.2f")")
                         .font(.subheadline.monospacedDigit()).frame(width: 105, alignment: .trailing)
-                    Text("\(region.wrappedValue.suggestedPrice, specifier: "%.2f")")
-                        .font(.subheadline.weight(.semibold).monospacedDigit()).foregroundStyle(region.wrappedValue.suggestedPrice < region.wrappedValue.currentPrice ? .green : .primary).frame(width: 112, alignment: .trailing)
+                    TextField(
+                        "Proposed price",
+                        value: region.suggestedPrice,
+                        format: .number.precision(.fractionLength(2))
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.trailing)
+                    .font(.subheadline.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(region.wrappedValue.suggestedPrice < region.wrappedValue.currentPrice ? .green : .primary)
+                    .frame(width: 112, alignment: .trailing)
+                    .disabled(store.calculatingProductIDs.contains(product.wrappedValue.id))
+                    .accessibilityLabel("Proposed price for \(region.wrappedValue.country) in \(region.wrappedValue.currency)")
                 }
                 .padding(.horizontal, 15).padding(.vertical, 11)
                 if index != indices.last { Divider().padding(.leading, 55) }
@@ -248,7 +258,7 @@ public struct PricingView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("PRICING RULE").font(.caption2.weight(.bold)).tracking(0.7).foregroundStyle(.secondary)
                 Text("Fair local pricing").font(.title3.weight(.bold))
-                Text("Suggestions use purchasing power, then snap to the nearest store-friendly price point.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text("Suggestions use purchasing power, then snap to the nearest store-friendly price point. You can edit any market before applying.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Divider()
             VStack(alignment: .leading, spacing: 8) {

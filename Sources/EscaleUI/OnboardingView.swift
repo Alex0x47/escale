@@ -669,7 +669,28 @@ public struct SettingsView: View {
                     .cardStyle(cornerRadius: 13)
                 }
                 Divider()
-                SectionTitle("Connections", subtitle: "Manage access to your developer accounts.")
+                HStack(alignment: .center, spacing: 16) {
+                    SectionTitle(
+                        "Connections",
+                        subtitle: "Manage access to your developer accounts and discover newly created apps."
+                    )
+                    Spacer()
+                    Button {
+                        Task { await store.sync() }
+                    } label: {
+                        if store.isSyncing {
+                            HStack(spacing: 7) {
+                                ProgressView().controlSize(.small)
+                                Text("Refreshing…")
+                            }
+                        } else {
+                            Label("Refresh stores", systemImage: "arrow.clockwise")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(store.isSyncing || !hasConnectedStore)
+                    .help("Fetch newly created apps and refresh data from the connected stores")
+                }
                 ForEach(StorePlatform.allCases) { platform in
                     let connection = store.workspace.connections.first(where: { $0.platform == platform })
                     VStack(alignment: .leading, spacing: 12) {
@@ -825,6 +846,10 @@ public struct SettingsView: View {
     private var canPairApps: Bool {
         store.workspace.apps.contains(where: { $0.appStoreApp != nil })
             && store.workspace.apps.contains(where: { $0.playStoreApp != nil })
+    }
+
+    private var hasConnectedStore: Bool {
+        store.workspace.connections.contains { $0.state == .connected }
     }
 
     private var openAISettingsCard: some View {

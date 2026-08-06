@@ -2,6 +2,14 @@
 
 All notable changes to Escale Community are documented here.
 
+## 1.1.0 — 2026-08-06
+
+- Added a visible Refresh stores action in Settings. Refreshing re-enumerates
+  App Store Connect apps so newly created apps appear without reconnecting the
+  account, and updates the displayed app count.
+- Made every proposed PPP market price directly editable after calculation, so
+  individual countries can be adjusted before reviewing or applying pricing.
+
 ## 1.0.2 — 2026-07-31
 
 - Added contextual callouts and feature entry points for official-distribution
